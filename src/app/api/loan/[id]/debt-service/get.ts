@@ -40,7 +40,7 @@ export interface DebtServiceApiResponse {
 export async function GET(request: NextRequest, context: { params: { id: string } }) {
   const loanApplicationId = context.params.id;
   const accessToken = request.headers.get('Authorization')?.split(' ')[1]; // Bearer token
-
+  console.log('accessToken', accessToken);
   if (!accessToken) {
     return NextResponse.json(
       {
