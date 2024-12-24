@@ -6,7 +6,6 @@ import ApplyLoanButton from './apply-loans';
 import { getLoanApplications } from './actions';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/auth-options';
-import { isUndefined } from 'lodash';
 
 export default async function Page({
   searchParams,
@@ -24,7 +23,7 @@ export default async function Page({
 
   const { loanApplications, isError, errorMessage } = await getLoanApplications(accountAddress!);
 
-  if (isError || isUndefined(loanApplications)) {
+  if (isError || !loanApplications) {
     return <div>{errorMessage}</div>;
   }
 

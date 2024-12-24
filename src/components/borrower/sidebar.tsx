@@ -16,7 +16,6 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { useCallback, useEffect, useRef } from 'react';
-import { isNull } from 'lodash';
 import { Role } from '@prisma/client';
 
 // Menu items.
@@ -62,7 +61,7 @@ export default function BorrowerSidebar() {
 
   useEffect(() => {
     const fetchRole = async () => {
-      if (isNull(session) || roleUpdatedRef.current || !session.address) {
+      if (!session || roleUpdatedRef.current || !session.address) {
         return;
       }
 

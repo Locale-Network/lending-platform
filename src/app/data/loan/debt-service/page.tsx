@@ -4,7 +4,6 @@ import { formatAddress } from '@/utils/string';
 import { Address } from 'viem';
 import * as React from 'react';
 import Loans from './select-loan';
-import { isUndefined } from 'lodash';
 
 /**
  * This page offers a Plaid Link session for users to connect to their bank account.
@@ -40,7 +39,7 @@ export default async function Page({ searchParams: { accountAddress } }: Props) 
     loanApplications,
   } = await getFilteredLoanApplicationsOfBorrower(accountAddress);
 
-  if (isErrorLoanApplications || isUndefined(loanApplications)) {
+  if (isErrorLoanApplications || !loanApplications) {
     return <div>{errorMessageLoanApplications}</div>;
   }
 

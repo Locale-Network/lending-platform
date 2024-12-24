@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { XCircle } from 'lucide-react';
 import { DebtServiceApiResponse, SBA } from '@/app/api/loan/[id]/debt-service/get';
+import { Transaction } from 'plaid';
 
 export default function CalculateDebtService({
   accessToken,
@@ -12,7 +13,7 @@ export default function CalculateDebtService({
   loanApplicationId: string;
 }) {
   const [apiError, setApiError] = useState<any | null>(null);
-  const [sba, setSba] = useState<SBA | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[] | null>(null);
 
   useEffect(() => {
     if (accessToken) {
@@ -27,7 +28,7 @@ export default function CalculateDebtService({
           if (data.status === 'error') {
             setApiError(data.message);
           } else {
-            setSba(data.data?.sba ?? null);
+            setTransactions(data.data?.transactions ?? null);
           }
         })
         .catch(() => setApiError('Error fetching credit score'));
@@ -43,7 +44,7 @@ export default function CalculateDebtService({
     );
   }
 
-  if (sba) {
+  if (transactions) {
     return (
       <div className="flex items-center gap-2 rounded-lg bg-green-50 p-4 text-green-600">
         <p>Success</p>
@@ -53,7 +54,7 @@ export default function CalculateDebtService({
 
   return (
     <div className="flex items-center gap-2 rounded-lg bg-gray-50 p-4 text-gray-600">
-      <span>Calculating debt service...</span>
+      <span>Processing transactions...</span>
     </div>
   );
 }

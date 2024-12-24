@@ -3,7 +3,6 @@
 import * as React from 'react';
 import Table from '@/components/custom/data-table';
 import PlaidLink from './plaid-link';
-import { isNull } from 'lodash';
 import { LoanApplication, LoanApplicationStatus } from '@prisma/client';
 import { ChevronRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,7 +20,7 @@ export default function Loans({ loanApplications, linkToken, accountAddress }: P
 
   return (
     <>
-      {isNull(loanApplicationId) && (
+      {!loanApplicationId && (
         <>
           <p>Select a loan application</p>
           <div className="my-4" />
