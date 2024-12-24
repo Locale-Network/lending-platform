@@ -58,6 +58,23 @@ export async function POST(req: Request) {
       );
     }
 
+    // Check if proof already exists
+    const existingProof = await prisma.debtServiceProof.findUnique({
+      where: {
+        id: proof.identifier,
+      },
+    });
+
+    // If proof already exists, return success
+    if (existingProof) {
+      return NextResponse.json(
+        {
+          message: 'Proof verified',
+        },
+        { status: 200 }
+      );
+    }
+
     await prisma.debtService.create({
       data: {
         loanApplication: {
