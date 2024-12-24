@@ -86,8 +86,8 @@ export async function GET(request: NextRequest, context: { params: { id: string 
 
     const transactions = await plaidClient.transactionsGet({
       access_token: accessToken,
-      start_date: startDate.toISOString(),
-      end_date: endDate.toISOString(),
+      start_date: startDate.toISOString().split('T')[0],
+      end_date: endDate.toISOString().split('T')[0],
     });
 
     console.log('transactions', transactions);
@@ -111,6 +111,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       { status: 200 }
     );
   } catch (error) {
+    console.error('Error fetching debt service', error);
     return NextResponse.json(
       {
         status: 'error',
