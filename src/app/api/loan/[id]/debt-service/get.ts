@@ -84,11 +84,13 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     // start date is 24 months before the end date
     const startDate = new Date(endDate.getTime() - 24 * 30 * 24 * 60 * 60 * 1000);
 
-    const transactions = await plaidClient.transactionsGet({
+    const response = await plaidClient.transactionsGet({
       access_token: accessToken,
       start_date: startDate.toISOString().split('T')[0],
       end_date: endDate.toISOString().split('T')[0],
     });
+
+    const transactions = response.data.transactions;
 
     console.log('transactions', transactions);
 
