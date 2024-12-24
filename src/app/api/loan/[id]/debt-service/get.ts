@@ -90,7 +90,12 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       end_date: endDate.toISOString().split('T')[0],
     });
 
-    const transactions = response.data.transactions;
+    const transactions = (response?.data?.transactions || []).map(t => ({
+      amount: t.amount,
+      account_id: t.account_id,
+      iso_currency_code: t.iso_currency_code,
+      date: t.date,
+    }));
 
     console.log('transactions', transactions);
 
