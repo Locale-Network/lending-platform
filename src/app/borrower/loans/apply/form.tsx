@@ -156,9 +156,9 @@ export default function LoanApplicationForm({
       case 1:
         return 'Business information';
       case 2:
-        return 'Connect your bank account';
+        return 'Calculate your debt service';
       case 3:
-        return 'Connect your Intuit Credit Karma';
+        return 'Calculate your credit score';
       case 4:
         return 'Current loans';
       default:
@@ -207,17 +207,20 @@ export default function LoanApplicationForm({
     let intervalId: NodeJS.Timeout;
 
     const pollCreditKarmaStatus = async () => {
-      try {
-        const response = await fetch(reclaimCreditKarmaStatusUrl);
-        const data = await response.json();
+      // TODO: once we have a sandbox
+      // try {
+      //   const response = await fetch(reclaimCreditKarmaStatusUrl);
+      //   const data = await response.json();
 
-        if (data?.session?.statusV2 === 'PROOF_SUBMITTED') {
-          form.setValue('hasCreditScoreProof', true);
-          clearInterval(intervalId);
-        }
-      } catch (error) {
-        console.error('Error polling Plaid status:', error);
-      }
+      //   if (data?.session?.statusV2 === 'PROOF_SUBMITTED') {
+      //     form.setValue('hasCreditScoreProof', true);
+      //     clearInterval(intervalId);
+      //   }
+      // } catch (error) {
+      //   console.error('Error polling Plaid status:', error);
+      // }
+      form.setValue('hasCreditScoreProof', true);
+      clearInterval(intervalId);
     };
 
     if (step === 3 && !hasCreditScoreProof) {
