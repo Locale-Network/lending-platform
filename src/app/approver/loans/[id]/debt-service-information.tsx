@@ -32,14 +32,10 @@ export default function DebtServiceInformation({ debtService }: Props) {
       <CardContent className="p-6">
         <div className="space-y-6">
           <DebtServiceItem
-            label="Net Operating Income"
-            value={formatCurrencyToUSD(debtService.netOperatingIncome)}
+            label="Transaction Count"
+            value={debtService.transactionCount.toString()}
+            highlight
           />
-          <DebtServiceItem
-            label="Total Debt Service"
-            value={formatCurrencyToUSD(debtService.totalDebtService)}
-          />
-          <DebtServiceItem label="DSCR" value={debtService.dscr.toFixed(2)} highlight />
         </div>
       </CardContent>
     </Card>
