@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { XCircle } from 'lucide-react';
-import { DebtServiceApiResponse, SBA } from '@/app/api/loan/[id]/debt-service/get';
+import { DebtServiceApiResponse } from '@/app/api/loan/[id]/debt-service/get';
 import { Transaction } from 'plaid';
 
 export default function CalculateDebtService({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getLoanApplication } from '@/services/db/loan-applications/borrower';
-import { PlaidApi } from 'plaid';
+import { PlaidApi, Transaction } from 'plaid';
 import { PlaidEnvironments } from 'plaid';
 import { Configuration } from 'plaid';
 
@@ -23,17 +23,17 @@ import { Configuration } from 'plaid';
  * @throws {500} - When debt service fetch fails
  */
 
-export interface SBA {
-  netOperatingIncome: number;
-  totalDebtService: number;
-  dscr: number;
-}
+// export interface SBA {
+//   netOperatingIncome: number;
+//   totalDebtService: number;
+//   dscr: number;
+// }
 
 export interface DebtServiceApiResponse {
   status: 'success' | 'error';
   message: string;
   data: {
-    sba: SBA;
+    transactions: Transaction[];
   } | null;
 }
 
