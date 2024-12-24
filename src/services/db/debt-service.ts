@@ -3,10 +3,7 @@ import 'server-only';
 import prisma from '@prisma/index';
 import { DebtService } from '@prisma/client';
 
-export type SaveDebtServiceArgs = Pick<
-  DebtService,
-  'netOperatingIncome' | 'totalDebtService' | 'dscr'
->;
+export type SaveDebtServiceArgs = Pick<DebtService, 'transactionCount'>;
 
 export const saveDebtServiceOfLoanApplication = async (args: {
   debtService: SaveDebtServiceArgs;
