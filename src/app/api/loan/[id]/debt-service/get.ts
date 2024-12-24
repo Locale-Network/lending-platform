@@ -95,20 +95,20 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     console.log('transactions', transactions);
 
     // TODO: make a POST request to the Cartesi
-    const netOperatingIncome = 100000;
-    const totalDebtService = 10000;
-    const dscr = netOperatingIncome / totalDebtService;
-    const sba: SBA = {
-      netOperatingIncome,
-      totalDebtService,
-      dscr,
-    };
+    // const netOperatingIncome = 100000;
+    // const totalDebtService = 10000;
+    // const dscr = netOperatingIncome / totalDebtService;
+    // const sba: SBA = {
+    //   netOperatingIncome,
+    //   totalDebtService,
+    //   dscr,
+    // };
 
     return NextResponse.json(
       {
         status: 'success',
-        message: 'Debt service retrieved successfully',
-        data: { sba },
+        message: 'Transactions retrieved successfully',
+        data: { transactions },
       },
       { status: 200 }
     );
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     return NextResponse.json(
       {
         status: 'error',
-        message: 'Error fetching debt service',
+        message: 'Error fetching transactions',
         data: null,
       },
       { status: 500 }
