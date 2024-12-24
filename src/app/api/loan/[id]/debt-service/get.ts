@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getLoanApplication } from '@/services/db/loan-applications/borrower';
+import { PlaidApi } from 'plaid';
+import { PlaidEnvironments } from 'plaid';
+import { Configuration } from 'plaid';
 
 /**
  * API endpoint is called automatically at the end of Plaid Link flow after user's bank account is connected
@@ -65,6 +68,30 @@ export async function GET(request: NextRequest, context: { params: { id: string 
   }
 
   try {
+    const configuration = new Configuration({
+      basePath: PlaidEnvironments.sandbox,
+      baseOptions: {
+        headers: {
+          'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
+          'PLAID-SECRET': process.env.PLAID_SECRET,
+        },
+      },
+    });
+
+    const plaidClient = new PlaidApi(configuration);
+
+    const endDate = new Date(loanApplication.createdAt);
+    // start date is 24 months before the end date
+    const startDate = new Date(endDate.getTime() - 24 * 30 * 24 * 60 * 60 * 1000);
+
+    const transactions = await plaidClient.transactionsGet({
+      access_token: accessToken,
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
+    });
+
+    console.log('transactions', transactions);
+
     // TODO: make a POST request to the Cartesi
     const netOperatingIncome = 100000;
     const totalDebtService = 10000;
