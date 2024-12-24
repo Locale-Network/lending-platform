@@ -24,7 +24,7 @@ export type LoanApplicationsForTable = {
   creatorAddress: string;
   creditScoreEquifax: number | null;
   creditScoreTransUnion: number | null;
-  dscr: number | null;
+  transactionCount: number | null;
   status: LoanApplicationStatus;
   createdDate: Date;
   updatedDate: Date;
