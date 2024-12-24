@@ -18,10 +18,14 @@ export default async function Page({
   const session = await getServerSession(authOptions);
   const accountAddress = session?.address;
 
+  if (!accountAddress) {
+    return <div>You must be logged in to view this page</div>;
+  }
+
   const query = searchParams?.query || '';
   const currentPage = Number(searchParams?.page) || 1;
 
-  const { loanApplications, isError, errorMessage } = await getLoanApplications(accountAddress!);
+  const { loanApplications, isError, errorMessage } = await getLoanApplications(accountAddress);
 
   if (isError || !loanApplications) {
     return <div>{errorMessage}</div>;

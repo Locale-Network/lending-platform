@@ -24,8 +24,7 @@ export const connectedBankAccountSchema = z.object({
 });
 export type ConnectedBankAccount = z.infer<typeof connectedBankAccountSchema>;
 
-export const BUSINESS_DESCRIPTION_MIN_LENGTH = 70;
-export const BUSINESS_DESCRIPTION_MAX_LENGTH = 100;
+export const BUSINESS_DESCRIPTION_MIN_LENGTH = 0;
 
 export const BUSINESS_FOUNDED_YEAR_MIN = 1800;
 export const BUSINESS_FOUNDED_YEAR_MAX = new Date().getFullYear();
@@ -59,15 +58,7 @@ export const loanApplicationFormSchema = z.object({
     })
     .optional(),
   businessPrimaryIndustry: z.nativeEnum(BusinessIndustry),
-  businessDescription: z
-    .string()
-    .trim()
-    .min(BUSINESS_DESCRIPTION_MIN_LENGTH, {
-      message: `Description must be at least ${BUSINESS_DESCRIPTION_MIN_LENGTH} characters.`,
-    })
-    .max(BUSINESS_DESCRIPTION_MAX_LENGTH, {
-      message: `Description must not exceed ${BUSINESS_DESCRIPTION_MAX_LENGTH} characters.`,
-    }),
+  businessDescription: z.string().trim().min(BUSINESS_DESCRIPTION_MIN_LENGTH),
   // Step 1: Business information
 
   // Step 2: Debt service calculation

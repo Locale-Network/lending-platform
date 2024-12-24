@@ -45,8 +45,6 @@ import QRCode from 'react-qr-code';
 import { submitLoanApplication } from './actions';
 import {
   loanApplicationFormSchema,
-  BUSINESS_DESCRIPTION_MAX_LENGTH,
-  BUSINESS_DESCRIPTION_MIN_LENGTH,
   BUSINESS_FOUNDED_YEAR_MAX,
   BUSINESS_FOUNDED_YEAR_MIN,
 } from './form-schema';
@@ -84,7 +82,7 @@ export default function LoanApplicationForm({
       hasOutstandingLoans: false,
       outstandingLoans: [],
       hasDebtServiceProof: false,
-      hasCreditScoreProof: false,
+      hasCreditScoreProof: true,
     },
   });
 
@@ -114,6 +112,7 @@ export default function LoanApplicationForm({
   });
 
   async function onSubmit(values: z.infer<typeof loanApplicationFormSchema>) {
+    console.log('values', values);
     // if (!values.hasDebtServiceProof) {
     //   form.setError('hasDebtServiceProof', {
     //     type: 'manual',
@@ -166,7 +165,36 @@ export default function LoanApplicationForm({
     }
   }
 
-  const nextStep = () => setStep(step => Math.min(step + 1, totalSteps));
+  const nextStep = async () => {
+    if (step === 1) {
+      const step1Fields = [
+        'businessLegalName',
+        'businessAddress',
+        'businessState',
+        'businessCity',
+        'businessZipCode',
+        'ein',
+        'businessFoundedYear',
+        'businessLegalStructure',
+        'businessWebsite',
+        'businessPrimaryIndustry',
+        'businessDescription',
+      ] as const;
+
+      const result = await form.trigger(step1Fields);
+
+      if (!result) {
+        toast({
+          title: 'Please fill in all required fields',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
+    setStep(step => Math.min(step + 1, totalSteps));
+  };
+
   const prevStep = () => setStep(step => Math.max(step - 1, 1));
   const clickStep = (step: number) => setStep(step);
 
@@ -487,20 +515,9 @@ export default function LoanApplicationForm({
                       <FormLabel>Description of your business</FormLabel>
                       <FormControl>
                         <div className="relative">
-                          <Textarea
-                            className="resize-none"
-                            maxLength={BUSINESS_DESCRIPTION_MAX_LENGTH}
-                            {...field}
-                          />
-                          <div className="absolute bottom-2 right-2 text-sm text-muted-foreground">
-                            {field.value?.length || 0}/{BUSINESS_DESCRIPTION_MAX_LENGTH}
-                          </div>
+                          <Textarea className="resize-none" {...field} />
                         </div>
                       </FormControl>
-                      <FormDescription>
-                        Minimum {BUSINESS_DESCRIPTION_MIN_LENGTH} characters, maximum{' '}
-                        {BUSINESS_DESCRIPTION_MAX_LENGTH} characters
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
