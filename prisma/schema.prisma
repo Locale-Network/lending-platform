@@ -221,9 +221,7 @@ model DebtService {
   loanApplicationId String          @map("loan_application_id")
   loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
 
-  netOperatingIncome Float @map("net_operating_income")
-  totalDebtService   Float @map("total_debt_service")
-  dscr               Float @map("dscr")
+  transactionCount Int @default(0) @map("transaction_count")
 
   // proof
   debtServiceProof DebtServiceProof?

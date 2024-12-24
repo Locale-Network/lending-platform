@@ -39,9 +39,7 @@ export async function POST(req: Request) {
   }
     */
     const loanApplicationId = context.extractedParameters.URL_PARAMS_1;
-    const netOperatingIncome = context.extractedParameters.netOperatingIncome;
-    const totalDebtService = context.extractedParameters.totalDebtService;
-    const dscr = context.extractedParameters.dscr;
+    const transactions = context.extractedParameters.transactions ?? [];
 
     console.log('proof identifier', proof.identifier);
     console.log('ctx', context);
@@ -67,9 +65,7 @@ export async function POST(req: Request) {
             id: loanApplicationId,
           },
         },
-        netOperatingIncome: Number(netOperatingIncome),
-        totalDebtService: Number(totalDebtService),
-        dscr: Number(dscr),
+        transactionCount: transactions.length,
         debtServiceProof: {
           create: {
             id: proof.identifier,
