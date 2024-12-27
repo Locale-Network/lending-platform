@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server';
 import { getLoanApplication } from '@/services/db/loan-applications/borrower';
 import prisma from '@prisma/index';
 
+import { Contract, Wallet, JsonRpcProvider, getBytes, hexlify } from 'ethers';
+import CartesiBase from '@cartesi/rollups/export/abi/base.json';
+
 // called as part of Reclaim's Debt Service flow
 
 export async function POST(req: Request) {
@@ -12,8 +15,6 @@ export async function POST(req: Request) {
     const decodedProof = decodeURIComponent(rawProof);
 
     const proof = JSON.parse(decodedProof) as Proof;
-
-    console.log('proof', proof);
 
     const isProofVerified = await verifyProof(proof);
     if (!isProofVerified) {
@@ -30,20 +31,8 @@ export async function POST(req: Request) {
       extractedParameters: Record<string, string>;
     };
 
-    /*
-     extractedParameters: {
-    URL_PARAMS_1: 'cm4r27onf0005uitnop2ty8rf',
-    dscr: '10',
-    netOperatingIncome: '100000',
-    totalDebtService: '10000'
-  }
-    */
     const loanApplicationId = context.extractedParameters.URL_PARAMS_1;
     const transactions = context.extractedParameters.transactions ?? [];
-
-    console.log('proof identifier', proof.identifier);
-    console.log('ctx', context);
-    console.log('loanApplicationId', loanApplicationId);
 
     const loanApplication = await getLoanApplication({
       loanApplicationId,
@@ -57,6 +46,23 @@ export async function POST(req: Request) {
         { status: 404 }
       );
     }
+
+    const provider = new JsonRpcProvider(process.env.CARTESI_RPC_URL as string);
+
+    const signer = new Wallet(process.env.CARTESI_PRIVATE_KEY as string, provider);
+
+    signer.connect(provider);
+
+    const contract = new Contract(
+      CartesiBase.contracts.InputBox.address,
+      CartesiBase.contracts.InputBox.abi,
+      signer
+    );
+
+    // Convert context to UTF-8 encoded bytes
+    const contextBytes = new TextEncoder().encode(JSON.stringify(context));
+
+    await contract.addInput(process.env.CARTESI_DAPP_ADDRESS as string, hexlify(contextBytes));
 
     // Check if proof already exists
     const existingProof = await prisma.debtServiceProof.findUnique({
