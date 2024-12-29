@@ -12,6 +12,7 @@ import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { Address, isAddress } from 'viem';
 import { revalidatePath } from 'next/cache';
+import { activateLoan } from '@/services/contracts/simpleLoanPool';
 
 export async function validateRequest(accountAddress: string) {
   const session = await getServerSession(authOptions);
@@ -81,6 +82,10 @@ export const updateLoanApplicationStatus = async (args: {
     const { loanApplicationId, status } = args;
 
     await dbUpdateLoanApplication({ loanApplicationId, loanApplication: { status } });
+
+    if (status === LoanApplicationStatus.APPROVED) {
+      await activateLoan(loanApplicationId);
+    }
 
     revalidatePath('/approver');
 

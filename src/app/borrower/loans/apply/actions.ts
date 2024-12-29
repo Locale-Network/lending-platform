@@ -6,6 +6,7 @@ import {
   submitLoanApplication as dbSubmitLoanApplication,
 } from '@/services/db/loan-applications/borrower';
 import { validateRequest as validateBorrowerRequest } from '@/app/borrower/actions';
+import { createLoan } from '@/services/contracts/simpleLoanPool';
 
 // return loan application id
 interface InitialiseLoanApplicationResponse {
@@ -21,11 +22,14 @@ export async function initialiseLoanApplication(
 
     const loanApplication = await dbInitialiseLoanApplication(accountAddress);
 
+    await createLoan(loanApplication.id, accountAddress, 1000, 300, 12);
+
     return {
       isError: false,
       loanApplicationId: loanApplication.id,
     };
   } catch (error) {
+    console.error('Error initiating loan application', error);
     return {
       isError: true,
       errorMessage: 'Error initiating loan application',
