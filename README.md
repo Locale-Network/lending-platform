@@ -1,4 +1,25 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Lending Platform
+
+NextJS + Prisma + Sign in with Ethereum
+
+## About
+
+The lending platform provides the user interface which allows both borrowers and approvers to access the system.
+
+There is some basic backend functionality through a few endpoints. We handle incoming proofs from Reclaim protocol when users connect their bank account.
+
+There are also two pages which allow the platform to act as a Reclaim data provider to allow users to complete the proof creation flow.
+
+### Borrowers
+
+- borrowers sign in with their wallet
+- the borrower performs a kyc for their account address
+- after the kyc, the borrower can apply for a loan by creating a loan request
+- during the loan creation process, bank account transaction history as well as credit score are collected in order to process the loan
+
+### Approvers
+
+- approvers can review and accept/reject a loan application
 
 ## Getting Started
 
