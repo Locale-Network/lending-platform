@@ -66,7 +66,7 @@ export default function ReclaimDebtService({ loanApplicationId, requestUrl, stat
             <Landmark className="h-4 w-4" />
             <Plus className="absolute -right-2 -top-2 h-1 w-1" />
           </div>
-          <span className="ml-2">Add bank account</span>
+          <span className="ml-2">Update Bank Data</span>
         </Button>
       </DialogTrigger>
       <DialogContent>

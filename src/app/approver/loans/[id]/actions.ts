@@ -8,6 +8,7 @@ import {
 import { validateRequest as validateApproverRequest } from '@/app/approver/actions';
 import { LoanApplicationStatus } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
+import { activateLoan } from '@/services/contracts/simpleLoanPool';
 
 interface GetLoanApplicationResponse {
   isError: boolean;
@@ -52,6 +53,10 @@ export const updateLoanApplicationStatus = async (args: {
     const { accountAddress, loanApplicationId, status } = args;
     await validateApproverRequest(accountAddress);
     await dbUpdateLoanApplication({ loanApplicationId, loanApplication: { status } });
+
+    if (status === LoanApplicationStatus.APPROVED) {
+      await activateLoan(loanApplicationId);
+    }
 
     revalidatePath(`/approver/loans/${loanApplicationId}`);
 

@@ -8,6 +8,8 @@ import {
   initialiseReclaimCreditKarmaProof,
   initialiseReclaimDebtServiceProof,
 } from './actions-reclaim';
+import { Suspense } from 'react';
+import { Loader2 } from 'lucide-react';
 
 export default async function Page() {
   const session = await getServerSession(authOptions);
@@ -24,6 +26,20 @@ export default async function Page() {
     redirect('/borrower/account');
   }
 
+  return (
+    <Suspense
+      fallback={
+        <div>
+          Preparing application... <Loader2 className="h-4 w-4 animate-spin" />
+        </div>
+      }
+    >
+      <LoanApplication accountAddress={accountAddress} />
+    </Suspense>
+  );
+}
+
+async function LoanApplication({ accountAddress }: { accountAddress: string }) {
   const { isError, errorMessage, loanApplicationId } =
     await initialiseLoanApplication(accountAddress);
 
