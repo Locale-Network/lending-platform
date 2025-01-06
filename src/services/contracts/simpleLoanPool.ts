@@ -39,3 +39,29 @@ export const activateLoan = async (loanId: string): Promise<void> => {
 
   return tx.wait();
 };
+
+export async function updateLoanInterestRate(
+  loanId: string,
+  interestRate: bigint
+): Promise<boolean> {
+  try {
+    const hashedLoanId = keccak256(toUtf8Bytes(loanId));
+
+    if (!simpleLoanPool.updateLoanInterestRate) {
+      throw new Error('updateLoanInterestRate function not found');
+    }
+
+    const tx = await simpleLoanPool.updateLoanInterestRate(hashedLoanId, interestRate);
+
+    const receipt = await tx.wait();
+    // Check if the transaction was successful
+    if (receipt.status === 0) {
+      throw new Error('Transaction failed');
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error updating loan interest rate', error);
+    return false;
+  }
+}

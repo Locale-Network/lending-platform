@@ -232,3 +232,11 @@ model DebtService {
   @@index([loanApplicationId])
   @@map("debt_services")
 }
+
+// Track processed notice indexes
+model Notice {
+  id        Int      @id
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("notices")
+}

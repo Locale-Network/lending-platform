@@ -113,7 +113,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       {
         status: 'success',
         message: 'Transactions retrieved successfully',
-        data: { transactions, loan_contract: process.env.SIMPLE_LOAN_POOL_ADDRESS },
+        data: { transactions },
       },
       { status: 200 }
     );
