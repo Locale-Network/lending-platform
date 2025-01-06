@@ -3,6 +3,7 @@ import { getLoanApplication } from '@/services/db/loan-applications/borrower';
 import { PlaidApi, Transaction } from 'plaid';
 import { PlaidEnvironments } from 'plaid';
 import { Configuration } from 'plaid';
+import { getLoanAmount } from '@/services/contracts/simpleLoanPool';
 
 /**
  * API endpoint is called automatically at the end of Plaid Link flow after user's bank account is connected
@@ -109,11 +110,13 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     //   dscr,
     // };
 
+    const loanAmount = await getLoanAmount(loanApplication.id);
+
     return NextResponse.json(
       {
         status: 'success',
         message: 'Transactions retrieved successfully',
-        data: { transactions },
+        data: { transactions, loanAmount: loanAmount.toString() },
       },
       { status: 200 }
     );
