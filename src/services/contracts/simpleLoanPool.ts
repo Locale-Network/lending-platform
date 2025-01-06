@@ -1,6 +1,6 @@
 import 'server-only';
 
-import simpleLoanPoolAbi from '../contracts/simpleLoanPool.abi.json';
+import simpleLoanPoolAbi from '../contracts/SimpleLoanPool.abi.json';
 
 import { Contract, JsonRpcProvider, keccak256, toUtf8Bytes, Wallet } from 'ethers';
 
