@@ -5,6 +5,8 @@ import { RemovedTransaction, Transaction, TransactionsSyncRequest } from 'plaid'
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest, res: NextResponse) {
   try {
     let cursor = '';

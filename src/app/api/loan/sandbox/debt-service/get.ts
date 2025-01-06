@@ -37,8 +37,8 @@ export interface DebtServiceApiResponse {
   } | null;
 }
 
-export async function GET(request: NextRequest, context: { params: { id: string } }) {
-  const loanApplicationId = context.params.id;
+export async function GET(_: NextRequest) {
+  const loanApplicationId = 'cm4s4pqfa0000js03444lukdh';
 
   const accessToken = 'access-sandbox-00ad6834-b999-4941-aba2-8555bafb21fe';
 
