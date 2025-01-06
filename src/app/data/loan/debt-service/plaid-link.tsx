@@ -17,7 +17,7 @@ interface PlaidLinkProps {
 export default function PlaidLink(props: PlaidLinkProps) {
   // const [accessToken, setAccessToken] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(
-    'access-sandbox-1b8d2bd8-8fd1-4363-a33e-550089f1a042'
+    'access-sandbox-00ad6834-b999-4941-aba2-8555bafb21fe'
   );
   const toast = useToast();
 
@@ -34,6 +34,9 @@ export default function PlaidLink(props: PlaidLinkProps) {
       }
 
       const { accessToken, itemId } = response;
+
+      console.log('accessToken', accessToken);
+      alert(accessToken);
 
       if (!accessToken || !itemId) {
         toast.toast({
