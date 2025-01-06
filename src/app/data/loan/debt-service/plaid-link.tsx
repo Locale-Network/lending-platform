@@ -35,9 +35,6 @@ export default function PlaidLink(props: PlaidLinkProps) {
 
       const { accessToken, itemId } = response;
 
-      console.log('accessToken', accessToken);
-      alert(accessToken);
-
       if (!accessToken || !itemId) {
         toast.toast({
           title: 'Error',
