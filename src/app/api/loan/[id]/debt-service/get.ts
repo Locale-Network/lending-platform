@@ -41,7 +41,6 @@ export interface DebtServiceApiResponse {
 export async function GET(request: NextRequest, context: { params: { id: string } }) {
   const loanApplicationId = context.params.id;
   const accessToken = request.headers.get('Authorization')?.split(' ')[1]; // Bearer token
-  console.log('accessToken', accessToken);
   if (!accessToken) {
     return NextResponse.json(
       {
@@ -110,8 +109,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     //   dscr,
     // };
 
-    // const loanAmount = await getLoanAmount(loanApplication.id);
-    const loanAmount = BigInt(1000000000);
+    const loanAmount = await getLoanAmount(loanApplication.id);
 
     return NextResponse.json(
       {
