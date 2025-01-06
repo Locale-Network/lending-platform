@@ -112,7 +112,8 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     //   dscr,
     // };
 
-    const loanAmount = await getLoanAmount(loanApplication.id);
+    // const loanAmount = await getLoanAmount(loanApplication.id);
+    const loanAmount = BigInt(1000000000);
 
     return NextResponse.json(
       {
