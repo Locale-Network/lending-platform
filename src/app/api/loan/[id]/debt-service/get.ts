@@ -40,18 +40,20 @@ export interface DebtServiceApiResponse {
 
 export async function GET(request: NextRequest, context: { params: { id: string } }) {
   const loanApplicationId = context.params.id;
-  const accessToken = request.headers.get('Authorization')?.split(' ')[1]; // Bearer token
-  console.log('accessToken', accessToken);
-  if (!accessToken) {
-    return NextResponse.json(
-      {
-        status: 'error',
-        message: 'No access token provided',
-        data: null,
-      },
-      { status: 400 }
-    );
-  }
+  // const accessToken = request.headers.get('Authorization')?.split(' ')[1]; // Bearer token
+  // console.log('accessToken', accessToken);
+  // if (!accessToken) {
+  //   return NextResponse.json(
+  //     {
+  //       status: 'error',
+  //       message: 'No access token provided',
+  //       data: null,
+  //     },
+  //     { status: 400 }
+  //   );
+  // }
+
+  const accessToken = 'access-sandbox-00ad6834-b999-4941-aba2-8555bafb21fe';
 
   const loanApplication = await getLoanApplication({
     loanApplicationId,
