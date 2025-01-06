@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 
 export default function SandboxPage() {
   useEffect(() => {
-    fetch('/api/loan/sandbox')
+    fetch('/api/sandbox/loan/debt-service')
       .then(res => res.json())
       .then(data => {
         console.log(data);
