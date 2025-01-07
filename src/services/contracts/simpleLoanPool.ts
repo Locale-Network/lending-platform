@@ -67,7 +67,12 @@ export async function updateLoanInterestRate(
 }
 
 export async function getLoanAmount(loanId: string): Promise<bigint> {
-  const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-  const loanAmount = await simpleLoanPool.loanAmounts(hashedLoanId);
-  return loanAmount;
+  try {
+    const hashedLoanId = keccak256(toUtf8Bytes(loanId));
+    const loanAmount = await simpleLoanPool.loanAmounts(hashedLoanId);
+    return loanAmount;
+  } catch (error) {
+    console.error('Error getting loan amount', error);
+    return BigInt(0);
+  }
 }
