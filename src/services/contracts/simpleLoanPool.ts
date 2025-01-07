@@ -77,7 +77,7 @@ export async function getLoanAmount(loanId: string): Promise<bigint> {
     return loanAmount;
   } catch (error) {
     console.error('Error getting loan amount', error);
-    // return BigInt(1000000000);
-    return BigInt(0);
+    return BigInt(1000000000);
+    // return BigInt(0);
   }
 }

@@ -31,6 +31,8 @@ export async function POST(req: Request) {
       extractedParameters: Record<string, string>;
     };
 
+    console.log('context', context);
+
     const loanApplicationId = context.extractedParameters.URL_PARAMS_1;
     const transactions = context.extractedParameters.transactions ?? [];
 
