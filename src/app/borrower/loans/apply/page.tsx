@@ -54,21 +54,12 @@ async function LoanApplication({ accountAddress }: { accountAddress: string }) {
       loanApplicationId,
     });
 
-  // reclaim debt service proof
-  const { requestUrl: reclaimDebtServiceRequestUrl, statusUrl: reclaimDebtServiceStatusUrl } =
-    await initialiseReclaimDebtServiceProof({
-      accountAddress,
-      loanApplicationId,
-    });
-
   return (
     <LoanApplicationForm
       loanApplicationId={loanApplicationId}
       accountAddress={accountAddress}
       reclaimCreditKarmaRequestUrl={reclaimCreditKarmaRequestUrl}
       reclaimCreditKarmaStatusUrl={reclaimCreditKarmaStatusUrl}
-      reclaimDebtServiceRequestUrl={reclaimDebtServiceRequestUrl}
-      reclaimDebtServiceStatusUrl={reclaimDebtServiceStatusUrl}
     />
   );
 }

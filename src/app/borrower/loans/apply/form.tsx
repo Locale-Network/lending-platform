@@ -42,7 +42,7 @@ import {
   BusinessIndustry,
 } from '@/types/business';
 import QRCode from 'react-qr-code';
-import { submitLoanApplication } from './actions';
+import { createDebtServiceRequest, submitLoanApplication } from './actions';
 import {
   loanApplicationFormSchema,
   BUSINESS_FOUNDED_YEAR_MAX,
@@ -54,17 +54,15 @@ interface LoanApplicationFormProps {
   accountAddress: string;
   reclaimCreditKarmaRequestUrl: string;
   reclaimCreditKarmaStatusUrl: string;
-  reclaimDebtServiceRequestUrl: string;
-  reclaimDebtServiceStatusUrl: string;
 }
 export default function LoanApplicationForm({
   loanApplicationId,
   accountAddress,
   reclaimCreditKarmaRequestUrl,
   reclaimCreditKarmaStatusUrl,
-  reclaimDebtServiceRequestUrl,
-  reclaimDebtServiceStatusUrl,
 }: LoanApplicationFormProps) {
+  const [debtServiceRequestUrl, setDebtServiceRequestUrl] = useState<string | null>(null);
+
   const [step, setStep] = useState(1);
 
   const [isPending, startTransition] = useTransition();
@@ -201,9 +199,9 @@ export default function LoanApplicationForm({
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
 
-    const pollPlaidStatus = async () => {
+    const pollPlaidStatus = async (statusUrl: string) => {
       try {
-        const response = await fetch(reclaimDebtServiceStatusUrl);
+        const response = await fetch(statusUrl);
         const data = await response.json();
 
         if (data?.session?.statusV2 === 'PROOF_SUBMITTED') {
@@ -215,12 +213,23 @@ export default function LoanApplicationForm({
       }
     };
 
-    if (step === 2 && !hasDebtServiceProof) {
+    const urlRequest = async () => {
+      setDebtServiceRequestUrl(null);
+      const { requestUrl: debtServiceRequestUrl, statusUrl: debtServiceStatusUrl } =
+        await createDebtServiceRequest(accountAddress, loanApplicationId);
+      setDebtServiceRequestUrl(debtServiceRequestUrl);
+
       // Poll every 3 seconds
-      intervalId = setInterval(pollPlaidStatus, 3000);
+      intervalId = setInterval(() => pollPlaidStatus(debtServiceStatusUrl), 3000);
 
       // Initial check
-      pollPlaidStatus();
+      pollPlaidStatus(debtServiceStatusUrl);
+    };
+
+    console.log('step', step);
+    if (step === 2 && !hasDebtServiceProof) {
+      console.log('step and poll');
+      urlRequest();
     }
 
     // Cleanup function
@@ -229,7 +238,7 @@ export default function LoanApplicationForm({
         clearInterval(intervalId);
       }
     };
-  }, [step, hasDebtServiceProof, reclaimDebtServiceStatusUrl, form, loanApplicationId]);
+  }, [step, hasDebtServiceProof, form, loanApplicationId, accountAddress]);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
@@ -535,7 +544,11 @@ export default function LoanApplicationForm({
                       <FormControl>
                         <div className="flex flex-col items-center space-y-4">
                           <p className="text-center">Scan the QR code to link your bank account</p>
-                          <QRCode value={reclaimDebtServiceRequestUrl} size={256} />
+                          {debtServiceRequestUrl ? (
+                            <QRCode value={debtServiceRequestUrl} size={256} />
+                          ) : (
+                            <LoadingSpinner />
+                          )}
                           {hasDebtServiceProof ? (
                             <div className="flex items-center space-x-2 rounded-lg bg-green-100 p-3 text-green-700">
                               <svg

@@ -7,6 +7,7 @@ import {
 } from '@/services/db/loan-applications/borrower';
 import { validateRequest as validateBorrowerRequest } from '@/app/borrower/actions';
 import { createLoan } from '@/services/contracts/simpleLoanPool';
+import { initialiseReclaimDebtServiceProof } from './actions-reclaim';
 
 // return loan application id
 interface InitialiseLoanApplicationResponse {
@@ -22,7 +23,11 @@ export async function initialiseLoanApplication(
 
     const loanApplication = await dbInitialiseLoanApplication(accountAddress);
 
-    await createLoan(loanApplication.id, accountAddress, 1000, 300, 12);
+    console.log('loanApplication', loanApplication);
+
+    await createLoan(loanApplication.id, accountAddress, 1000000000, 300, 24);
+
+    console.log('loan created');
 
     return {
       isError: false,
@@ -71,5 +76,12 @@ export async function submitLoanApplication(args: {
       businessDescription: formData.businessDescription,
     },
     outstandingLoans: formData.outstandingLoans,
+  });
+}
+
+export async function createDebtServiceRequest(accountAddress: string, loanApplicationId: string) {
+  return initialiseReclaimDebtServiceProof({
+    accountAddress,
+    loanApplicationId,
   });
 }

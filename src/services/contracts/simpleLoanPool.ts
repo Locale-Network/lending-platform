@@ -4,7 +4,7 @@ import simpleLoanPoolAbi from '../contracts/SimpleLoanPool.abi.json';
 
 import { Contract, JsonRpcProvider, keccak256, toUtf8Bytes, Wallet } from 'ethers';
 
-const provider = new JsonRpcProvider(process.env.CARTESI_RPC_URL as string);
+const provider = new JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL as string);
 const signer = new Wallet(process.env.CARTESI_PRIVATE_KEY as string, provider);
 
 const simpleLoanPool = new Contract(
@@ -22,6 +22,8 @@ export const createLoan = async (
 ): Promise<void> => {
   const hashedLoanId = keccak256(toUtf8Bytes(loanId));
 
+  console.log('creating loan...');
+
   const tx = await simpleLoanPool.createLoan(
     hashedLoanId,
     borrower,
@@ -29,6 +31,8 @@ export const createLoan = async (
     interestRate,
     remainingMonths
   );
+
+  console.log('loan creation submitted');
 
   return tx.wait();
 };
@@ -73,6 +77,7 @@ export async function getLoanAmount(loanId: string): Promise<bigint> {
     return loanAmount;
   } catch (error) {
     console.error('Error getting loan amount', error);
+    // return BigInt(1000000000);
     return BigInt(0);
   }
 }

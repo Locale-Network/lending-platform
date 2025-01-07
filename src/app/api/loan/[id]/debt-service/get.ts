@@ -99,16 +99,6 @@ export async function GET(request: NextRequest, context: { params: { id: string 
 
     console.log('transactions', transactions);
 
-    // TODO: make a POST request to the Cartesi
-    // const netOperatingIncome = 100000;
-    // const totalDebtService = 10000;
-    // const dscr = netOperatingIncome / totalDebtService;
-    // const sba: SBA = {
-    //   netOperatingIncome,
-    //   totalDebtService,
-    //   dscr,
-    // };
-
     const loanAmount = await getLoanAmount(loanApplication.id);
 
     return NextResponse.json(

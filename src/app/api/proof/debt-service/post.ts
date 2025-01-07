@@ -47,7 +47,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const provider = new JsonRpcProvider(process.env.CARTESI_RPC_URL as string);
+    const provider = new JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL as string);
 
     const signer = new Wallet(process.env.CARTESI_PRIVATE_KEY as string, provider);
 

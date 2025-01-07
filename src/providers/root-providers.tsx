@@ -14,7 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WagmiProvider, type State } from 'wagmi';
 import { config } from '@/utils/wagmi';
 
-import { arbitrum } from 'wagmi/chains';
+import { anvil, arbitrum } from 'wagmi/chains';
 
 const getSiweMessageOptions: GetSiweMessageOptions = () => ({
   statement: 'Sign in to Locale Lending',
@@ -48,7 +48,12 @@ export default function RootProviders({ children, initialState, session }: RootP
       <QueryClientProvider client={queryClient}>
         <SessionProvider session={session}>
           <RainbowKitSiweNextAuthProvider getSiweMessageOptions={getSiweMessageOptions}>
-            <RainbowKitProvider appInfo={appInfo} initialChain={arbitrum}>
+            <RainbowKitProvider
+              appInfo={appInfo}
+              initialChain={
+                process.env.NEXT_PUBLIC_RPC_URL === 'http://localhost:8545' ? anvil : arbitrum
+              }
+            >
               {children}
             </RainbowKitProvider>
           </RainbowKitSiweNextAuthProvider>
