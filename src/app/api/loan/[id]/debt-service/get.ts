@@ -81,8 +81,17 @@ export async function GET(request: NextRequest, context: { params: { id: string 
     const plaidClient = new PlaidApi(configuration);
 
     const endDate = new Date(loanApplication.createdAt);
-    // start date is 24 months before the end date
-    const startDate = new Date(endDate.getTime() - 24 * 30 * 24 * 60 * 60 * 1000);
+    // start date is 12 months before the end date
+    const startDate = new Date(endDate.getTime() - 12 * 30 * 24 * 60 * 60 * 1000);
+
+    const balanceResponse = await plaidClient.accountsBalanceGet({
+      access_token: accessToken,
+    });
+
+    let balance = 0;
+    for (const account of balanceResponse.data.accounts) {
+      balance += account.balances.available || 0;
+    }
 
     const response = await plaidClient.transactionsGet({
       access_token: accessToken,
@@ -97,7 +106,14 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       date: t.date,
     }));
 
-    console.log('transactions', transactions);
+    if (balance > 0) {
+      transactions.push({
+        amount: balance,
+        account_id: 'balance',
+        iso_currency_code: 'USD',
+        date: new Date().toISOString(),
+      });
+    }
 
     const loanAmount = await getLoanAmount(loanApplication.id);
 
