@@ -18,15 +18,16 @@ export async function GET(req: NextRequest) {
   const lastProcessedIndex = await getLastProcessedIndex();
 
   try {
-    const cursor = lastProcessedIndex
-      ? Buffer.from(lastProcessedIndex.toString()).toString('base64')
-      : null;
-    const query = JSON.stringify({
+    const cursor = Buffer.from(lastProcessedIndex.toString()).toString('base64');
+    let query = JSON.stringify({
       query: `{
         notices(first: 2${cursor ? `, after: "${cursor}"` : ''}) {
           edges {
             node {
               index
+              input {
+                index
+              }
               payload
             }
           }
@@ -37,6 +38,23 @@ export async function GET(req: NextRequest) {
         }
       }`,
     });
+    if (lastProcessedIndex < 0) {
+      query = JSON.stringify({
+        query: `{
+          notices(first: 2) {
+            edges {
+              node {
+                index
+                input {
+                  index
+                }
+                payload
+              }
+            }
+          }
+        }`,
+      });
+    }
 
     const response = await fetch(`${process.env.CARTESI_GRAPHQL_URL}`, {
       method: 'POST',
@@ -51,8 +69,8 @@ export async function GET(req: NextRequest) {
 
     const result = await response.json();
 
-    for (const edge of result.data.notices.edges) {
-      const noticeId = edge.node.index;
+    for (const edge of result.data.notices?.edges || []) {
+      const noticeId = edge.node.input.index;
 
       if (await checkNotice(noticeId)) {
         continue;
@@ -66,7 +84,7 @@ export async function GET(req: NextRequest) {
 
       const updated = await updateLoanInterestRate(
         decodedPayload.loanId,
-        BigInt(decodedPayload.interestRate)
+        BigInt(Math.floor(decodedPayload.interestRate))
       );
 
       if (!updated) {

@@ -21,5 +21,5 @@ export async function getLastProcessedIndex(): Promise<number> {
     orderBy: { id: 'desc' },
   });
 
-  return notice?.id || 0;
+  return notice?.id ?? -1;
 }
