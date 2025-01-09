@@ -15,48 +15,46 @@ import { revalidateLoanApplication } from './actions';
 
 interface Props {
   loanApplicationId: string;
-  requestUrl: string;
-  statusUrl: string;
 }
 
-export default function ReclaimDebtService({ loanApplicationId, requestUrl, statusUrl }: Props) {
+export default function ReclaimDebtService({ loanApplicationId }: Props) {
   const [hasDebtServiceProof, setHasDebtServiceProof] = React.useState(false);
   const [isOpen, setIsOpen] = React.useState(false);
 
-  React.useEffect(() => {
-    let intervalId: NodeJS.Timeout;
+  // React.useEffect(() => {
+  //   let intervalId: NodeJS.Timeout;
 
-    const pollDebtServiceStatus = async () => {
-      try {
-        const response = await fetch(statusUrl);
-        const data = await response.json();
+  //   const pollDebtServiceStatus = async () => {
+  //     try {
+  //       const response = await fetch(statusUrl);
+  //       const data = await response.json();
 
-        if (data?.session?.statusV2 === 'PROOF_SUBMITTED') {
-          setHasDebtServiceProof(true);
-          clearInterval(intervalId);
-          await revalidateLoanApplication(loanApplicationId);
-        }
-      } catch (error) {
-        console.error('Error polling Plaid status:', error);
-      }
-    };
+  //       if (data?.session?.statusV2 === 'PROOF_SUBMITTED') {
+  //         setHasDebtServiceProof(true);
+  //         clearInterval(intervalId);
+  //         await revalidateLoanApplication(loanApplicationId);
+  //       }
+  //     } catch (error) {
+  //       console.error('Error polling Plaid status:', error);
+  //     }
+  //   };
 
-    if (isOpen && !hasDebtServiceProof) {
-      // Only poll when dialog is open
-      // Poll every 3 seconds
-      intervalId = setInterval(pollDebtServiceStatus, 3000);
+  //   if (isOpen && !hasDebtServiceProof) {
+  //     // Only poll when dialog is open
+  //     // Poll every 3 seconds
+  //     intervalId = setInterval(pollDebtServiceStatus, 3000);
 
-      // Initial check
-      pollDebtServiceStatus();
-    }
+  //     // Initial check
+  //     pollDebtServiceStatus();
+  //   }
 
-    // Cleanup function
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [hasDebtServiceProof, statusUrl, isOpen, loanApplicationId]);
+  //   // Cleanup function
+  //   return () => {
+  //     if (intervalId) {
+  //       clearInterval(intervalId);
+  //     }
+  //   };
+  // }, [hasDebtServiceProof, isOpen, loanApplicationId]);
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -76,7 +74,6 @@ export default function ReclaimDebtService({ loanApplicationId, requestUrl, stat
           <DialogDescription>Scan the QR code to link your bank account</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col items-center space-y-4">
-          <QRCode value={requestUrl} size={256} />
           {hasDebtServiceProof ? (
             <div className="flex items-center space-x-2 rounded-lg bg-green-100 p-3 text-green-700">
               <svg

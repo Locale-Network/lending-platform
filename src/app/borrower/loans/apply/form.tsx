@@ -42,7 +42,7 @@ import {
   BusinessIndustry,
 } from '@/types/business';
 import QRCode from 'react-qr-code';
-import { createDebtServiceRequest, submitDebtServiceProof, submitLoanApplication } from './actions';
+import { submitDebtServiceProof, submitLoanApplication } from './actions';
 import {
   loanApplicationFormSchema,
   BUSINESS_FOUNDED_YEAR_MAX,
@@ -53,15 +53,11 @@ import PlaidLink from './plaid-link';
 interface LoanApplicationFormProps {
   loanApplicationId: string;
   accountAddress: string;
-  reclaimCreditKarmaRequestUrl: string;
-  reclaimCreditKarmaStatusUrl: string;
   linkToken: string;
 }
 export default function LoanApplicationForm({
   loanApplicationId,
   accountAddress,
-  reclaimCreditKarmaRequestUrl,
-  reclaimCreditKarmaStatusUrl,
   linkToken,
 }: LoanApplicationFormProps) {
   const [debtServiceRequestUrl, setDebtServiceRequestUrl] = useState<string | null>(null);
@@ -249,7 +245,7 @@ export default function LoanApplicationForm({
         clearInterval(intervalId);
       }
     };
-  }, [step, hasCreditScoreProof, reclaimCreditKarmaStatusUrl, form, loanApplicationId]);
+  }, [step, hasCreditScoreProof, form, loanApplicationId]);
 
   return (
     <Card className="mx-auto w-full max-w-4xl">
@@ -566,7 +562,6 @@ export default function LoanApplicationForm({
                           <p className="text-center">
                             Scan the QR code to link your credit karma account
                           </p>
-                          <QRCode value={reclaimCreditKarmaRequestUrl} size={256} />
                           {hasCreditScoreProof ? (
                             <div className="flex items-center space-x-2 rounded-lg bg-green-100 p-3 text-green-700">
                               <svg

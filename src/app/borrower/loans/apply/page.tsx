@@ -4,10 +4,6 @@ import { authOptions } from '@/app/api/auth/auth-options';
 import { initialiseLoanApplication } from './actions';
 import { getIdentityVerificationStatus } from '@/app/borrower/account/actions';
 import { redirect } from 'next/navigation';
-import {
-  initialiseReclaimCreditKarmaProof,
-  initialiseReclaimDebtServiceProof,
-} from './actions-reclaim';
 import { Suspense } from 'react';
 import { Loader2 } from 'lucide-react';
 import { createLinkTokenForTransactions } from './actions';
@@ -58,19 +54,10 @@ async function LoanApplication({ accountAddress }: { accountAddress: string }) {
     return <div>{errorMessageLinkToken}</div>;
   }
 
-  // reclaim credit karma proof
-  const { requestUrl: reclaimCreditKarmaRequestUrl, statusUrl: reclaimCreditKarmaStatusUrl } =
-    await initialiseReclaimCreditKarmaProof({
-      accountAddress,
-      loanApplicationId,
-    });
-
   return (
     <LoanApplicationForm
       loanApplicationId={loanApplicationId}
       accountAddress={accountAddress}
-      reclaimCreditKarmaRequestUrl={reclaimCreditKarmaRequestUrl}
-      reclaimCreditKarmaStatusUrl={reclaimCreditKarmaStatusUrl}
       linkToken={linkToken}
     />
   );

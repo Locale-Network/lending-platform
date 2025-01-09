@@ -8,7 +8,6 @@ import {
 } from '@/services/db/loan-applications/borrower';
 import { validateRequest as validateBorrowerRequest } from '@/app/borrower/actions';
 import { createLoan, getLoanAmount } from '@/services/contracts/simpleLoanPool';
-import { initialiseReclaimDebtServiceProof } from './actions-reclaim';
 
 import { getAllLoanApplicationsOfBorrower as dbGetAllLoanApplicationsOfBorrower } from '@/services/db/loan-applications/borrower';
 import plaidClient from '@/utils/plaid';
@@ -84,13 +83,6 @@ export async function submitLoanApplication(args: {
       businessDescription: formData.businessDescription,
     },
     outstandingLoans: formData.outstandingLoans,
-  });
-}
-
-export async function createDebtServiceRequest(accountAddress: string, loanApplicationId: string) {
-  return initialiseReclaimDebtServiceProof({
-    accountAddress,
-    loanApplicationId,
   });
 }
 

@@ -1,12 +1,11 @@
 import { getLoanApplication } from './actions';
-import { initialiseReclaimDebtServiceProof } from '@/app/borrower/loans/apply/actions-reclaim';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/auth-options';
 import BusinessInformation from './business-information';
 import LoanInformation from './loan-information';
 import OutstandingLoans from './outstanding-loans';
 import { LoanApplicationStatus } from '@prisma/client';
-import ReclaimDebtService from './reclaim-debt-service';
+import DebtService from './debt-service';
 import {
   getLoanActive,
   getLoanAmount,
@@ -38,12 +37,6 @@ export default async function Page({ params }: { params: { id: string } }) {
     return <>loan with id {id} not found</>;
   }
 
-  const { requestUrl: reclaimDebtServiceRequestUrl, statusUrl: reclaimDebtServiceStatusUrl } =
-    await initialiseReclaimDebtServiceProof({
-      accountAddress,
-      loanApplicationId: id,
-    });
-
   const tokenDecimals = await getTokenDecimals();
   const tokenSymbol = await getTokenSymbol();
   const loanActive = await getLoanActive(id);
@@ -56,11 +49,7 @@ export default async function Page({ params }: { params: { id: string } }) {
       {loanApplication.status !== LoanApplicationStatus.APPROVED &&
         loanApplication.status !== LoanApplicationStatus.REJECTED && (
           <div className="flex justify-end">
-            <ReclaimDebtService
-              requestUrl={reclaimDebtServiceRequestUrl}
-              statusUrl={reclaimDebtServiceStatusUrl}
-              loanApplicationId={id}
-            />
+            <DebtService loanApplicationId={id} />
           </div>
         )}
       <div className="my-4" />
