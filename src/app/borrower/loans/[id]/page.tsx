@@ -7,6 +7,13 @@ import LoanInformation from './loan-information';
 import OutstandingLoans from './outstanding-loans';
 import { LoanApplicationStatus } from '@prisma/client';
 import ReclaimDebtService from './reclaim-debt-service';
+import {
+  getLoanActive,
+  getLoanAmount,
+  getLoanInterestRate,
+  getLoanRepaymentAmount,
+} from '@/services/contracts/simpleLoanPool';
+import { getTokenDecimals, getTokenSymbol } from '@/services/contracts/token';
 
 export default async function Page({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -37,6 +44,13 @@ export default async function Page({ params }: { params: { id: string } }) {
       loanApplicationId: id,
     });
 
+  const tokenDecimals = await getTokenDecimals();
+  const tokenSymbol = await getTokenSymbol();
+  const loanActive = await getLoanActive(id);
+  const loanAmount = await getLoanAmount(id);
+  const loanInterestRate = await getLoanInterestRate(id);
+  const loanRepaymentAmount = await getLoanRepaymentAmount(id);
+
   return (
     <>
       {loanApplication.status !== LoanApplicationStatus.APPROVED &&
@@ -51,7 +65,14 @@ export default async function Page({ params }: { params: { id: string } }) {
         )}
       <div className="my-4" />
       <div className="grid grid-cols-1 gap-4 p-0 md:grid-cols-2">
-        <LoanInformation loanApplication={loanApplication} />
+        <LoanInformation
+          loanApplication={loanApplication}
+          tokenSymbol={tokenSymbol}
+          loanAmount={Number(loanAmount) / 10 ** tokenDecimals}
+          loanInterestRate={Number(loanInterestRate)}
+          loanRepaymentAmount={Number(loanRepaymentAmount) / 10 ** tokenDecimals}
+          loanActive={loanActive}
+        />
         <BusinessInformation business={loanApplication} />
         <OutstandingLoans loans={loanApplication.outstandingLoans} />
       </div>

@@ -14,3 +14,13 @@ export const balanceOf = async (address: string): Promise<number> => {
 
   return Number(balance) / 10 ** 4;
 };
+
+export const getTokenSymbol = async (): Promise<string> => {
+  const symbol = await token.symbol();
+  return symbol;
+};
+
+export const getTokenDecimals = async (): Promise<number> => {
+  const decimals = await token.decimals();
+  return Number(decimals);
+};

@@ -76,16 +76,18 @@ export default function LoanStatus(props: Props) {
           Approve
         </Button>
       )}
-      {props.currentStatus !== LoanApplicationStatus.REJECTED && (
-        <Button className={rejectedStyle} onClick={onReject} disabled={isPending}>
-          Reject
-        </Button>
-      )}
-      {props.currentStatus !== LoanApplicationStatus.ADDITIONAL_INFO_NEEDED && (
-        <Button className={revisionNeededStyle} onClick={onRevisionNeeded} disabled={isPending}>
-          Request Revision
-        </Button>
-      )}
+      {props.currentStatus !== LoanApplicationStatus.REJECTED &&
+        props.currentStatus !== LoanApplicationStatus.APPROVED && (
+          <Button className={rejectedStyle} onClick={onReject} disabled={isPending}>
+            Reject
+          </Button>
+        )}
+      {props.currentStatus !== LoanApplicationStatus.ADDITIONAL_INFO_NEEDED &&
+        props.currentStatus !== LoanApplicationStatus.APPROVED && (
+          <Button className={revisionNeededStyle} onClick={onRevisionNeeded} disabled={isPending}>
+            Request Revision
+          </Button>
+        )}
     </div>
   );
 }

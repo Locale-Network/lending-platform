@@ -42,24 +42,27 @@ import {
   BusinessIndustry,
 } from '@/types/business';
 import QRCode from 'react-qr-code';
-import { createDebtServiceRequest, submitLoanApplication } from './actions';
+import { createDebtServiceRequest, submitDebtServiceProof, submitLoanApplication } from './actions';
 import {
   loanApplicationFormSchema,
   BUSINESS_FOUNDED_YEAR_MAX,
   BUSINESS_FOUNDED_YEAR_MIN,
 } from './form-schema';
+import PlaidLink from './plaid-link';
 
 interface LoanApplicationFormProps {
   loanApplicationId: string;
   accountAddress: string;
   reclaimCreditKarmaRequestUrl: string;
   reclaimCreditKarmaStatusUrl: string;
+  linkToken: string;
 }
 export default function LoanApplicationForm({
   loanApplicationId,
   accountAddress,
   reclaimCreditKarmaRequestUrl,
   reclaimCreditKarmaStatusUrl,
+  linkToken,
 }: LoanApplicationFormProps) {
   const [debtServiceRequestUrl, setDebtServiceRequestUrl] = useState<string | null>(null);
 
@@ -111,6 +114,10 @@ export default function LoanApplicationForm({
 
   async function onSubmit(values: z.infer<typeof loanApplicationFormSchema>) {
     console.log('values', values);
+
+    if (!values.hasDebtServiceProof || !values.hasCreditScoreProof) {
+      return;
+    }
     // if (!values.hasDebtServiceProof) {
     //   form.setError('hasDebtServiceProof', {
     //     type: 'manual',
@@ -196,49 +203,17 @@ export default function LoanApplicationForm({
   const prevStep = () => setStep(step => Math.max(step - 1, 1));
   const clickStep = (step: number) => setStep(step);
 
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
+  const handlePlaidLinkSuccess = (accessToken: string) => {
+    console.log('handlePlaidLinkSuccess');
+    console.log('accessToken', accessToken);
+    form.setValue('hasDebtServiceProof', true);
 
-    const pollPlaidStatus = async (statusUrl: string) => {
-      try {
-        const response = await fetch(statusUrl);
-        const data = await response.json();
-
-        if (data?.session?.statusV2 === 'PROOF_SUBMITTED') {
-          clearInterval(intervalId);
-          form.setValue('hasDebtServiceProof', true);
-        }
-      } catch (error) {
-        console.error('Error polling debt service status:', error);
-      }
-    };
-
-    const urlRequest = async () => {
-      setDebtServiceRequestUrl(null);
-      const { requestUrl: debtServiceRequestUrl, statusUrl: debtServiceStatusUrl } =
-        await createDebtServiceRequest(accountAddress, loanApplicationId);
-      setDebtServiceRequestUrl(debtServiceRequestUrl);
-
-      // Poll every 3 seconds
-      intervalId = setInterval(() => pollPlaidStatus(debtServiceStatusUrl), 3000);
-
-      // Initial check
-      pollPlaidStatus(debtServiceStatusUrl);
-    };
-
-    console.log('step', step);
-    if (step === 2 && !hasDebtServiceProof) {
-      console.log('step and poll');
-      urlRequest();
-    }
-
-    // Cleanup function
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [step, hasDebtServiceProof, form, loanApplicationId, accountAddress]);
+    // make request
+    submitDebtServiceProof({
+      accessToken,
+      loanApplicationId,
+    });
+  };
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
@@ -543,12 +518,7 @@ export default function LoanApplicationForm({
                     <FormItem>
                       <FormControl>
                         <div className="flex flex-col items-center space-y-4">
-                          <p className="text-center">Scan the QR code to link your bank account</p>
-                          {debtServiceRequestUrl ? (
-                            <QRCode value={debtServiceRequestUrl} size={256} />
-                          ) : (
-                            <LoadingSpinner />
-                          )}
+                          <p className="text-center">Link your bank account</p>
                           {hasDebtServiceProof ? (
                             <div className="flex items-center space-x-2 rounded-lg bg-green-100 p-3 text-green-700">
                               <svg
@@ -568,9 +538,12 @@ export default function LoanApplicationForm({
                               <p className="font-medium">Bank account connected</p>
                             </div>
                           ) : (
-                            <div className="flex items-center space-x-2">
-                              <p className="animate-pulse">Waiting for completion...</p>
-                            </div>
+                            <PlaidLink
+                              linkToken={linkToken}
+                              loanApplicationId={loanApplicationId}
+                              accountAddress={accountAddress}
+                              onSuccess={handlePlaidLinkSuccess}
+                            />
                           )}
                         </div>
                       </FormControl>

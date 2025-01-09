@@ -10,6 +10,7 @@ import {
 } from './actions-reclaim';
 import { Suspense } from 'react';
 import { Loader2 } from 'lucide-react';
+import { createLinkTokenForTransactions } from './actions';
 
 export default async function Page() {
   const session = await getServerSession(authOptions);
@@ -47,6 +48,16 @@ async function LoanApplication({ accountAddress }: { accountAddress: string }) {
     return <div>{errorMessage}</div>;
   }
 
+  const {
+    isError: isErrorLinkToken,
+    errorMessage: errorMessageLinkToken,
+    linkToken,
+  } = await createLinkTokenForTransactions(accountAddress);
+
+  if (isErrorLinkToken || !linkToken) {
+    return <div>{errorMessageLinkToken}</div>;
+  }
+
   // reclaim credit karma proof
   const { requestUrl: reclaimCreditKarmaRequestUrl, statusUrl: reclaimCreditKarmaStatusUrl } =
     await initialiseReclaimCreditKarmaProof({
@@ -60,6 +71,7 @@ async function LoanApplication({ accountAddress }: { accountAddress: string }) {
       accountAddress={accountAddress}
       reclaimCreditKarmaRequestUrl={reclaimCreditKarmaRequestUrl}
       reclaimCreditKarmaStatusUrl={reclaimCreditKarmaStatusUrl}
+      linkToken={linkToken}
     />
   );
 }

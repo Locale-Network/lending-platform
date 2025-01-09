@@ -2,18 +2,41 @@
 
 import { LoanApplication, LoanApplicationStatus } from '@prisma/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Wallet, Clock, RefreshCw, Hash } from 'lucide-react';
+import {
+  Wallet,
+  Clock,
+  RefreshCw,
+  Hash,
+  PercentIcon,
+  DollarSign,
+  TrendingUpIcon,
+} from 'lucide-react';
 import { getLoanStatusStyle } from '@/utils/colour';
 import { formatDateToUS } from '@/utils/date';
 import { formatAddress } from '@/utils/string';
 import { Address } from 'viem';
+import { Progress } from '@/components/ui/progress';
 
 interface Props {
   loanApplication: LoanApplication;
+  tokenSymbol: string;
+  loanActive: boolean;
+  loanAmount: number;
+  loanInterestRate: number;
+  loanRepaymentAmount: number;
 }
 
-export default function LoanInformation({ loanApplication }: Props) {
+export default function LoanInformation({
+  loanApplication,
+  tokenSymbol,
+  loanActive = false,
+  loanAmount,
+  loanInterestRate,
+  loanRepaymentAmount,
+}: Props) {
   const statusStyle = getLoanStatusStyle(loanApplication.status);
+
+  const repaymentProgress = loanAmount > 0 ? (loanRepaymentAmount / loanAmount) * 100 : 0;
 
   return (
     <Card className="mx-auto w-full max-w-2xl">
@@ -55,11 +78,57 @@ export default function LoanInformation({ loanApplication }: Props) {
           <span className="text-sm">{formatDateToUS(loanApplication.createdAt)}</span>
         </div>
         <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
-          <div className="flex items-center space-x-2">
-            <RefreshCw className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
-            <span className="font-medium">Last Updated:</span>
+          <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
+            <div className="flex items-center space-x-2">
+              <RefreshCw className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+              <span className="font-medium">Last Updated:</span>
+            </div>
+            <span className="text-sm">{formatDateToUS(loanApplication.updatedAt)}</span>
           </div>
-          <span className="text-sm">{formatDateToUS(loanApplication.updatedAt)}</span>
+        </div>
+        <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
+          <div className="flex items-center space-x-2">
+            <PercentIcon className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+            <span className="font-medium">Interest Rate:</span>
+          </div>
+          <span className="text-sm">{loanInterestRate / 100}%</span>
+        </div>
+        <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
+          <div className="flex items-center space-x-2">
+            <DollarSign className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+            <span className="font-medium">Loan Amount:</span>
+          </div>
+          <span className="text-sm">
+            {loanAmount} {tokenSymbol}
+          </span>
+        </div>
+        <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
+          <div className="flex items-center space-x-2">
+            <DollarSign className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+            <span className="font-medium">Funds:</span>
+          </div>
+          {loanActive && (
+            <div className="rounded-md bg-green-200 px-2 py-1 text-sm text-green-800">issued</div>
+          )}
+          {!loanActive && (
+            <div className="rounded-md bg-gray-200 px-2 py-1 text-sm text-gray-800">not issued</div>
+          )}
+        </div>
+        <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
+          <div className="flex items-center space-x-2">
+            <DollarSign className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+            <span className="font-medium">Repayment Amount:</span>
+          </div>
+          <span className="text-sm">
+            {loanRepaymentAmount} {tokenSymbol}
+          </span>
+        </div>
+        <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
+          <div className="flex flex-1 items-center space-x-2">
+            <TrendingUpIcon className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+            <span className="font-medium">Repayment Progress:</span>
+          </div>
+          <Progress className="flex-1 " value={repaymentProgress} />
         </div>
       </CardContent>
     </Card>
