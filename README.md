@@ -23,7 +23,32 @@ There are also two pages which allow the platform to act as a Reclaim data provi
 
 ## Getting Started
 
-First, run the development server:
+First, you should set up the [Loan Pool](https://github.com/Locale-Network/loan-pool) Smart Contracts and Cartesi instance for local development.
+
+Copy the `example.env` file and fill in the missing variables:
+
+```bash
+cp .example.env .env
+```
+
+You will need a local instance of postgres:
+```bash
+docker compose up db
+```
+
+Install all modules:
+
+```bash
+npm i
+```
+
+Run the database migrations:
+```bash
+npx prisma generate && npx prisma migrate dev
+```
+
+Run the dev server (for local dev, the local Cartesi machine should be running):
+
 
 ```bash
 npm run dev
@@ -37,18 +62,26 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Loan Platform
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+### Sign in
 
-## Learn More
+Sign in with Wallet Connect. This will create an account for you as a "BORROWER".
 
-To learn more about Next.js, take a look at the following resources:
+You can request loans. 
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+If you would like to approve loans, make yourself a "APPROVER".
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+### Apply for loan
+
+1. You will be asked to KYC the first time. Follow the instructions on the top right for sandbox data.
+2. Create a new loan application
+3. Submit
+
+### Approve a loan
+
+1. Click on the loan in the list
+2. Hit the approve button and the funds will be sent to the user
 
 ## Deploy on Vercel
 
