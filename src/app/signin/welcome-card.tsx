@@ -9,7 +9,7 @@ import WalletConnectButton from '@/components/wallet-connect-button';
 import { useSession } from 'next-auth/react';
 import { useAccount } from 'wagmi';
 import { useRouter } from 'next/navigation';
-import { ROLE_REDIRECTS } from '@/app/api/auth/auth-options';
+import { ROLE_REDIRECTS } from '@/app/api/auth/auth-pages';
 
 // TODO: add link to terms and privacy
 

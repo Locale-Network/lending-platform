@@ -13,12 +13,18 @@ import Loans from './select-loan';
  */
 
 interface Props {
-  searchParams: {
+  searchParams: Promise<{
     accountAddress: string;
-  };
+  }>;
 }
 
-export default async function Page({ searchParams: { accountAddress } }: Props) {
+export default async function Page(props: Props) {
+  const searchParams = await props.searchParams;
+
+  const {
+    accountAddress
+  } = searchParams;
+
   if (!accountAddress) {
     return <AddressInput />;
   }

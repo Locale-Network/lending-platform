@@ -1,6 +1,4 @@
-export const config = {
-  runtime: 'nodejs',
-};
+export const runtime = 'nodejs';
 
 import { NextAuthOptions, PagesOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
@@ -10,6 +8,7 @@ import { PrismaAdapter } from '@auth/prisma-adapter';
 import { Role } from '@prisma/client';
 import { getCsrfToken } from 'next-auth/react';
 import { getToken } from 'next-auth/jwt';
+import { authPages } from './auth-pages';
 
 const NEXTAUTH_URL = process.env.NEXTAUTH_URL as string;
 // if (!NEXTAUTH_URL) {
@@ -20,23 +19,6 @@ const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET as string;
 // if (!NEXTAUTH_SECRET) {
 //   throw new Error('NEXTAUTH_SECRET is not set');
 // }
-
-export const ROLE_REDIRECTS: Record<Role, string> = {
-  BORROWER: '/borrower',
-  APPROVER: '/approver',
-  ADMIN: '/admin',
-} as const;
-
-export const ROLE_ACCESS: Record<Role, string[]> = {
-  ADMIN: ['admin', 'approver'], // Admin can access admin and approver routes
-  APPROVER: ['approver'], // Approver can only access approver routes
-  BORROWER: ['borrower'], // Borrower can only access borrower routes
-} as const;
-
-export const authPages: Partial<PagesOptions> = {
-  signIn: '/signin',
-  signOut: '/signin',
-};
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),

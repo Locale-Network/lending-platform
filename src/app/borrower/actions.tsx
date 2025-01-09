@@ -4,7 +4,7 @@ import { Role } from '@prisma/client';
 import { getServerSession } from 'next-auth';
 import { isAddress } from 'viem';
 import { redirect } from 'next/navigation';
-import { ROLE_REDIRECTS } from '@/app/api/auth/auth-options';
+import { ROLE_REDIRECTS } from '@/app/api/auth/auth-pages';
 
 export async function validateRequest(accountAddress: string) {
   const session = await getServerSession(authOptions);

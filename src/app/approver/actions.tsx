@@ -6,7 +6,8 @@ import {
 } from '@/services/db/loan-applications/approver';
 import { formatAddress } from '@/utils/string';
 import { LoanApplicationsForTable } from './columns';
-import { authOptions, ROLE_REDIRECTS } from '@/app/api/auth/auth-options';
+import { authOptions } from '@/app/api/auth/auth-options';
+import { ROLE_REDIRECTS } from '@/app/api/auth/auth-pages';
 import { LoanApplicationStatus, Role } from '@prisma/client';
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';

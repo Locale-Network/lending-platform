@@ -1,6 +1,5 @@
 import { withAuth } from 'next-auth/middleware';
-import { authPages } from '@/app/api/auth/auth-options';
-import { ROLE_REDIRECTS, ROLE_ACCESS } from '@/app/api/auth/auth-options';
+import { authPages, ROLE_REDIRECTS, ROLE_ACCESS } from '@/app/api/auth/auth-pages';
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 

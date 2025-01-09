@@ -26,7 +26,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const initialState = cookieToInitialState(config, headers().get('cookie'));
+  const initialState = cookieToInitialState(config, (await headers()).get('cookie'));
   const session = await getServerSession(authOptions);
 
   return (
