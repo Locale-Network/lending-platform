@@ -83,6 +83,15 @@ If you would like to approve loans, make yourself a "APPROVER".
 1. Click on the loan in the list
 2. Hit the approve button and the funds will be sent to the user
 
+## Processing notices
+
+Normally notices are processed through a CRON job on vercel.
+
+Trigger manually:
+
+GET http://localhost:3000/api/cron/notices
+with `Authorization: Bearer {CRON_SECRET}`
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
