@@ -123,27 +123,6 @@ export const columns: ColumnDef<LoanApplicationsForTable>[] = [
     header: 'Borrower Address',
     cell: ({ row }) => <div>{row.getValue('creatorAddress')}</div>,
   },
-  {
-    id: 'creditScores',
-    header: 'Credit Score',
-    cell: ({ row }) => {
-      const creditScoreEquifax = row.getValue('creditScoreEquifax') as number | null;
-      const creditScoreTransUnion = row.getValue('creditScoreTransUnion') as number | null;
-
-      return (
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center space-x-2">
-            <span className="w-20 text-sm text-gray-500">Equifax:</span>
-            <span className="font-medium">{creditScoreEquifax ?? 'Not found'}</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <span className="w-20 text-sm text-gray-500">TransUnion:</span>
-            <span className="font-medium">{creditScoreTransUnion ?? 'Not found'}</span>
-          </div>
-        </div>
-      );
-    },
-  },
 
   {
     accessorKey: 'dscr',
