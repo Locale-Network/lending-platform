@@ -1,5 +1,5 @@
 import { http, createConfig, cookieStorage, createStorage } from 'wagmi';
-import { arbitrum } from 'wagmi/chains';
+import { arbitrum, arbitrumSepolia } from 'wagmi/chains';
 import { connectorsForWallets } from '@rainbow-me/rainbowkit';
 import {
   metaMaskWallet,
@@ -33,8 +33,8 @@ export const config = createConfig({
   storage: createStorage({
     storage: cookieStorage,
   }),
-  chains: [arbitrum],
+  chains: [arbitrumSepolia],
   transports: {
-    [arbitrum.id]: http(),
+    [arbitrumSepolia.id]: http(),
   },
 });

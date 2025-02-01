@@ -1,13 +1,13 @@
 import { http, createConfig, cookieStorage, createStorage } from 'wagmi';
-import { arbitrum } from 'wagmi/chains';
+import { arbitrum, arbitrumSepolia } from 'wagmi/chains';
 
 export const config = createConfig({
   ssr: true,
   storage: createStorage({
     storage: cookieStorage,
   }),
-  chains: [arbitrum],
+  chains: [arbitrumSepolia],
   transports: {
-    [arbitrum.id]: http(),
+    [arbitrumSepolia.id]: http(),
   },
 });

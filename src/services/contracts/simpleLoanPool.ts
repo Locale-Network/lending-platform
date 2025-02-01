@@ -102,7 +102,6 @@ export async function getLoanActive(loanId: string): Promise<boolean> {
 
 export async function getLoanRemainingMonths(loanId: string): Promise<bigint> {
   const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-  console.log(simpleLoanPool.getFunction('loanIdToActive'));
   const loanRemainingMonths = await simpleLoanPool.loanIdToRepaymentRemainingMonths(hashedLoanId);
   return loanRemainingMonths;
 }

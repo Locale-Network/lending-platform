@@ -17,8 +17,9 @@ export const rawBalanceOf = async (address: string): Promise<bigint> => {
 
 export const balanceOf = async (address: string): Promise<number> => {
   const balance: bigint = await token.balanceOf(address);
+  const decimals = await token.decimals();
 
-  return Number(balance) / 10 ** 4;
+  return Number(balance) / 10 ** Number(decimals);
 };
 
 export const getTokenSymbol = async (): Promise<string> => {
