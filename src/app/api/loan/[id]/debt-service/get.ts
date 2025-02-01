@@ -38,8 +38,19 @@ export interface DebtServiceApiResponse {
   } | null;
 }
 
-export async function GET(request: NextRequest, context: { params: { id: string } }) {
-  const loanApplicationId = context.params.id;
+export async function GET(request: NextRequest) {
+  const loanApplicationId = request.nextUrl.searchParams.get('id');
+  if (!loanApplicationId) {
+    return NextResponse.json(
+      {
+        status: 'error',
+        message: 'No loan application ID provided',
+        data: null,
+      },
+      { status: 400 }
+    );
+  }
+
   const accessToken = request.headers.get('Authorization')?.split(' ')[1]; // Bearer token
   if (!accessToken) {
     return NextResponse.json(
