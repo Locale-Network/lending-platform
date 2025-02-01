@@ -9,7 +9,6 @@
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
-    "vercel-install": "npm i -f",
     "vercel-build": "prisma generate && prisma migrate deploy && next build",
     "format": "npx prettier --write .",
     "format:check": "npx prettier --check ."
