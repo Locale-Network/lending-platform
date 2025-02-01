@@ -17,11 +17,18 @@ export async function GET(req: NextRequest) {
 
   const lastProcessedIndex = await getLastProcessedIndex();
 
+  console.log('lastProcessedIndex', lastProcessedIndex);
+
   try {
-    const cursor = Buffer.from(lastProcessedIndex.toString()).toString('base64');
+    // Base64 encode the index number for the cursor
+    const cursor =
+      lastProcessedIndex >= 0
+        ? Buffer.from(lastProcessedIndex.toString()).toString('base64')
+        : null;
+
     let query = JSON.stringify({
-      query: `{
-        notices(first: 2${cursor ? `, after: "${cursor}"` : ''}) {
+      query: `query NoticesQuery($cursor: String) {
+        notices(first: 2, after: $cursor) {
           edges {
             node {
               index
@@ -37,8 +44,11 @@ export async function GET(req: NextRequest) {
           }
         }
       }`,
+      variables: {
+        cursor,
+      },
     });
-    if (lastProcessedIndex < 0) {
+    if (!cursor) {
       query = JSON.stringify({
         query: `{
           notices(first: 2) {
@@ -68,6 +78,11 @@ export async function GET(req: NextRequest) {
     }
 
     const result = await response.json();
+
+    if (result.errors) {
+      console.error('Failed to fetch notices', result.errors);
+      return NextResponse.json({ success: false }, { status: 500 });
+    }
 
     for (const edge of result.data.notices?.edges || []) {
       const noticeId = edge.node.input.index;
