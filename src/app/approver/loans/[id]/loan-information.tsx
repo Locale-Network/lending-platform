@@ -18,23 +18,23 @@ import { Address } from 'viem';
 import { Progress } from '@/components/ui/progress';
 
 interface Props {
-  loanApplication: LoanApplication;
-  tokenSymbol: string;
+  loanApplication?: LoanApplication;
+  tokenSymbol?: string;
   loanActive?: boolean;
-  loanAmount: number;
-  loanInterestRate: number;
-  loanRepaymentAmount: number;
+  loanAmount?: number;
+  loanInterestRate?: number;
+  loanRepaymentAmount?: number;
 }
 
 export default function LoanInformation({
   loanApplication,
   tokenSymbol,
   loanActive = false,
-  loanAmount,
-  loanInterestRate,
-  loanRepaymentAmount,
+  loanAmount = 0,
+  loanInterestRate = 0,
+  loanRepaymentAmount = 0,
 }: Props) {
-  const statusStyle = getLoanStatusStyle(loanApplication.status);
+  const statusStyle = getLoanStatusStyle(loanApplication?.status);
 
   const repaymentProgress = loanAmount > 0 ? (loanRepaymentAmount / loanAmount) * 100 : 0;
 
@@ -48,7 +48,9 @@ export default function LoanInformation({
           <div
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusStyle}`}
           >
-            <span className="ml-1">{loanApplication.status.replace(/_/g, ' ')}</span>
+            <span className="ml-1">
+              {loanApplication?.status.replace(/_/g, ' ') ?? 'loading...'}
+            </span>
           </div>
         </div>
       </CardHeader>
@@ -58,7 +60,7 @@ export default function LoanInformation({
             <Hash className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
             <span className="font-medium">Loan id:</span>
           </div>
-          <span className="break-all font-mono text-xs sm:text-sm">{loanApplication.id}</span>
+          <span className="break-all font-mono text-xs sm:text-sm">{loanApplication?.id}</span>
         </div>
 
         <div className="flex flex-col space-y-2 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
@@ -67,7 +69,7 @@ export default function LoanInformation({
             <span className="font-medium">Borrower address:</span>
           </div>
           <span className="break-all font-mono text-xs sm:text-sm">
-            {formatAddress(loanApplication.accountAddress as Address)}
+            {loanApplication ? formatAddress(loanApplication.accountAddress as Address) : ''}
           </span>
         </div>
         <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
@@ -75,14 +77,18 @@ export default function LoanInformation({
             <Clock className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
             <span className="font-medium">Created At:</span>
           </div>
-          <span className="text-sm">{formatDateToUS(loanApplication.createdAt)}</span>
+          <span className="text-sm">
+            {loanApplication ? formatDateToUS(loanApplication.createdAt) : ''}
+          </span>
         </div>
         <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
           <div className="flex items-center space-x-2">
             <RefreshCw className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
             <span className="font-medium">Last Updated:</span>
           </div>
-          <span className="text-sm">{formatDateToUS(loanApplication.updatedAt)}</span>
+          <span className="text-sm">
+            {loanApplication ? formatDateToUS(loanApplication.updatedAt) : ''}
+          </span>
         </div>
         <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
           <div className="flex items-center space-x-2">

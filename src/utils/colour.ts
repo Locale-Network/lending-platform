@@ -1,6 +1,10 @@
 import { LoanApplicationStatus } from '@prisma/client';
 
-export const getLoanStatusStyle = (status: LoanApplicationStatus) => {
+export const getLoanStatusStyle = (status: LoanApplicationStatus | undefined) => {
+  if (!status) {
+    return 'bg-gray-100 text-gray-800';
+  }
+
   const statusStyles: Record<LoanApplicationStatus, string> = {
     APPROVED: 'bg-green-100 text-green-800 hover:bg-green-200',
     PENDING: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',

@@ -15,8 +15,27 @@ import {
   getLoanRepaymentAmount,
 } from '@/services/contracts/simpleLoanPool';
 import { getTokenDecimals } from '@/services/contracts/token';
+import { Suspense } from 'react';
 
 export default async function Page(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense
+      fallback={
+        <>
+          <div className="flex justify-end p-4"> </div>
+          <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
+            <LoanInformation />
+            <BusinessInformation />
+          </div>
+        </>
+      }
+    >
+      <AsyncPage params={props.params} />
+    </Suspense>
+  );
+}
+
+async function AsyncPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const { id } = params;
 
@@ -66,10 +85,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           loanActive={loanActive}
         />
         <BusinessInformation business={loanApplication} />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <CreditScoreInformation creditScore={loanApplication.creditScore?.[0] ?? null} />
-          <DebtServiceInformation debtService={loanApplication.debtService?.[0] ?? null} />
-        </div>
+
         <OutstandingLoans loans={loanApplication.outstandingLoans} />
       </div>
     </>
