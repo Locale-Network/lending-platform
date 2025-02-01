@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 
 const ROUTE_TITLES: Record<string, string> = {
   '/admin': 'Home',
-  '/approver': 'Current Loans',
+  '/approver': 'Dashboard',
 };
 
 export default function BorrowerHeader() {

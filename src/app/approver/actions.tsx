@@ -13,7 +13,13 @@ import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { Address, isAddress } from 'viem';
 import { revalidatePath } from 'next/cache';
-import { activateLoan } from '@/services/contracts/simpleLoanPool';
+import {
+  activateLoan,
+  getLoanAmount,
+  getLoanRemainingMonths,
+  getLoanRepaymentAmount,
+} from '@/services/contracts/simpleLoanPool';
+import { getTokenDecimals, getTokenSymbol } from '@/services/contracts/token';
 
 export async function validateRequest(accountAddress: string) {
   const session = await getServerSession(authOptions);
@@ -99,4 +105,25 @@ export const updateLoanApplicationStatus = async (args: {
       errorMessage: 'Failed to update loan application status',
     };
   }
+};
+
+export const getLoanAmountAction = async (loanId: string): Promise<number> => {
+  const loanAmount = await getLoanAmount(loanId);
+  const tokenDecimals = await getTokenDecimals();
+  return Number(loanAmount) / 10 ** tokenDecimals;
+};
+
+export const getLoanRepaymentAmountAction = async (loanId: string): Promise<number> => {
+  const loanRepaymentAmount = await getLoanRepaymentAmount(loanId);
+  const tokenDecimals = await getTokenDecimals();
+  return Number(loanRepaymentAmount) / 10 ** tokenDecimals;
+};
+
+export const getLoanRemainingMonthsAction = async (loanId: string): Promise<number> => {
+  const loanRemainingMonths = await getLoanRemainingMonths(loanId);
+  return Number(loanRemainingMonths);
+};
+
+export const getTokenSymbolAction = async (): Promise<string> => {
+  return await getTokenSymbol();
 };

@@ -3,6 +3,7 @@ import 'server-only';
 import simpleLoanPoolAbi from '../contracts/SimpleLoanPool.abi.json';
 
 import { Contract, JsonRpcProvider, keccak256, toUtf8Bytes, Wallet } from 'ethers';
+import { rawBalanceOf } from './token';
 
 const provider = new JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL as string);
 const signer = new Wallet(process.env.CARTESI_PRIVATE_KEY as string, provider);
@@ -97,4 +98,21 @@ export async function getLoanActive(loanId: string): Promise<boolean> {
   const hashedLoanId = keccak256(toUtf8Bytes(loanId));
   const loanActive = await simpleLoanPool.loanIdToActive(hashedLoanId);
   return loanActive;
+}
+
+export async function getLoanRemainingMonths(loanId: string): Promise<bigint> {
+  const hashedLoanId = keccak256(toUtf8Bytes(loanId));
+  console.log(simpleLoanPool.getFunction('loanIdToActive'));
+  const loanRemainingMonths = await simpleLoanPool.loanIdToRepaymentRemainingMonths(hashedLoanId);
+  return loanRemainingMonths;
+}
+
+export async function getLoanPoolRemaining(): Promise<bigint> {
+  const loanPoolSize = await rawBalanceOf(await simpleLoanPool.getAddress());
+  return loanPoolSize;
+}
+
+export async function getLoanPoolTotalLentAmount(): Promise<bigint> {
+  const loanPoolTotalLentAmount = await simpleLoanPool.totalLentAmount();
+  return loanPoolTotalLentAmount;
 }

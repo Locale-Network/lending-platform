@@ -9,6 +9,12 @@ const signer = new Wallet(process.env.CARTESI_PRIVATE_KEY as string, provider);
 
 const token = new Contract(process.env.TOKEN_ADDRESS as string, tokenAbi.abi, provider);
 
+export const rawBalanceOf = async (address: string): Promise<bigint> => {
+  const balance: bigint = await token.balanceOf(address);
+
+  return balance;
+};
+
 export const balanceOf = async (address: string): Promise<number> => {
   const balance: bigint = await token.balanceOf(address);
 

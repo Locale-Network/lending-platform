@@ -1,7 +1,7 @@
 'use client';
 
 import { LoanApplicationStatus } from '@prisma/client';
-import { ColumnDef } from '@tanstack/react-table';
+import { ColumnDef, Row } from '@tanstack/react-table';
 import Link from 'next/link';
 import { getLoanStatusStyle } from '@/utils/colour';
 import { formatDateToUS } from '@/utils/date';
@@ -15,9 +15,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { MoreHorizontal } from 'lucide-react';
-import { updateLoanApplicationStatus } from './actions';
-import { useTransition } from 'react';
+import {
+  getLoanAmountAction,
+  getLoanRemainingMonthsAction,
+  getLoanRepaymentAmountAction,
+  getTokenSymbolAction,
+  updateLoanApplicationStatus,
+} from './actions';
+import { useEffect, useState, useTransition } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export type LoanApplicationsForTable = {
   id: string;
@@ -125,17 +132,15 @@ export const columns: ColumnDef<LoanApplicationsForTable>[] = [
   },
 
   {
-    accessorKey: 'dscr',
-    header: 'DSCR',
-    cell: ({ row }) => {
-      const dscr = row.getValue('dscr') as number | null;
+    accessorKey: 'loan',
+    header: 'Loan',
+    cell: LoanCell,
+  },
 
-      if (dscr === null) {
-        return <div>Not found</div>;
-      }
-
-      return <div>{dscr}</div>;
-    },
+  {
+    accessorKey: 'remainingMonths',
+    header: 'Remaining Months',
+    cell: LoanRemainingMonthsCell,
   },
 
   {
@@ -170,3 +175,76 @@ export const columns: ColumnDef<LoanApplicationsForTable>[] = [
     cell: ({ row }) => <ActionsCell loanApplication={row.original} />,
   },
 ];
+
+function LoanCell({ row }: { row: Row<LoanApplicationsForTable> }) {
+  const id = row.getValue('id') as string;
+
+  const [symbol, setSymbol] = useState<string | null>(null);
+  const [amount, setAmount] = useState<number | null>(null);
+  const [repaymentAmount, setRepaymentAmount] = useState<number | null>(null);
+
+  const repaymentProgress =
+    amount && repaymentAmount && amount > 0 ? (repaymentAmount / amount) * 100 : 0;
+
+  useEffect(() => {
+    const fetchLoanAmount = async () => {
+      const loanAmount = await getLoanAmountAction(id);
+      const loanRepaymentAmount = await getLoanRepaymentAmountAction(id);
+      const tokenSymbol = await getTokenSymbolAction();
+      setAmount(loanAmount);
+      setRepaymentAmount(loanRepaymentAmount);
+      setSymbol(tokenSymbol);
+    };
+    fetchLoanAmount();
+  }, [id]);
+
+  if (amount === null || repaymentAmount === null) {
+    return <Skeleton className="h-4 w-60" />;
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <div>
+        Amount: {amount} {symbol}
+      </div>
+      <div>
+        Repaid: {repaymentAmount} {symbol}
+      </div>
+      <div>Remaining: {repaymentProgress.toFixed(2)}%</div>
+    </div>
+  );
+}
+
+function LoanRemainingMonthsCell({ row }: { row: Row<LoanApplicationsForTable> }) {
+  const id = row.getValue('id') as string;
+
+  const [remainingMonths, setRemainingMonths] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fetchLoanRemainingMonths = async () => {
+      const loanRemainingMonths = await getLoanRemainingMonthsAction(id);
+      setRemainingMonths(loanRemainingMonths);
+    };
+    fetchLoanRemainingMonths();
+  }, [id]);
+
+  if (remainingMonths === null) {
+    return <Skeleton className="h-4 w-60" />;
+  }
+
+  const status = row.getValue('status') as LoanApplicationStatus;
+
+  if (remainingMonths === 0) {
+    if (status === LoanApplicationStatus.APPROVED) {
+      return <div>Loan is due</div>;
+    }
+
+    return <div>-</div>;
+  }
+
+  if (status === LoanApplicationStatus.APPROVED) {
+    return <div>{remainingMonths} months</div>;
+  }
+
+  return <div>-</div>;
+}

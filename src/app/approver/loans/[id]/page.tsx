@@ -2,8 +2,6 @@ import { getLoanApplication } from './actions';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/auth-options';
 import BusinessInformation from './business-information';
-import CreditScoreInformation from './credit-score-information';
-import DebtServiceInformation from './debt-service-information';
 import LoanInformation from './loan-information';
 import OutstandingLoans from './outstanding-loans';
 import LoanStatus from './loan-status';

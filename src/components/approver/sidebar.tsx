@@ -1,6 +1,6 @@
 'use client';
 
-import { Inbox } from 'lucide-react';
+import { HomeIcon } from 'lucide-react';
 import { usePathname } from 'next/navigation'; // Add this import
 import { getRoleOfAccount } from '@/app/actions';
 import { useSession } from 'next-auth/react';
@@ -21,9 +21,9 @@ import { Role } from '@prisma/client';
 // Menu items.
 const items = [
   {
-    title: 'Current Loans',
+    title: 'Dashboard',
     url: '/approver',
-    icon: Inbox,
+    icon: HomeIcon,
   },
 ];
 

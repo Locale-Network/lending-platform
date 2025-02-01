@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, Inbox } from 'lucide-react';
+import { Home, HomeIcon, Inbox } from 'lucide-react';
 import { usePathname } from 'next/navigation'; // Add this import
 import { getRoleOfAccount } from '@/app/actions';
 import { useSession } from 'next-auth/react';
@@ -26,9 +26,9 @@ const items = [
     icon: Home,
   },
   {
-    title: 'Current Loans',
-    url: '/approver',
-    icon: Inbox,
+    title: 'Dashboard',
+    url: '/admin',
+    icon: HomeIcon,
   },
 ];
 
