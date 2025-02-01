@@ -7,7 +7,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest, res: NextResponse) {
+export async function GET(req: NextRequest) {
   try {
     let cursor = '';
     let added: Transaction[] = [];
