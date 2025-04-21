@@ -23,8 +23,7 @@ export default function ViewLoansCard() {
         <div className="space-y-2">
           <CardTitle className="text-2xl font-semibold">View loan applications</CardTitle>
           <CardDescription className="text-base leading-relaxed text-muted-foreground">
-            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor
-            incididunt ut labore et dolore magna aliqua.
+            See the status of your loan applications.
           </CardDescription>
         </div>
       </CardHeader>

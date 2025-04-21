@@ -24,8 +24,7 @@ export default function ApplyLoanCard() {
           <div className="space-y-2">
             <CardTitle className="text-2xl font-semibold">Apply for loan</CardTitle>
             <CardDescription className="text-base leading-relaxed text-muted-foreground">
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor
-              incididunt ut labore et dolore magna aliqua.
+              Funds are distributed through a decentralized loan pool contract.
             </CardDescription>
           </div>
         </CardHeader>
