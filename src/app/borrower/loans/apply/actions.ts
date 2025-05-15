@@ -8,13 +8,15 @@ import {
 } from '@/services/db/loan-applications/borrower';
 import { validateRequest as validateBorrowerRequest } from '@/app/borrower/actions';
 import { createLoan, getLoanAmount } from '@/services/contracts/simpleLoanPool';
-
+import { authOptions } from '@/app/api/auth/auth-options';
 import { getAllLoanApplicationsOfBorrower as dbGetAllLoanApplicationsOfBorrower } from '@/services/db/loan-applications/borrower';
 import plaidClient from '@/utils/plaid';
 import { LoanApplicationStatus, LoanApplication } from '@prisma/client';
 import { Configuration, CountryCode, PlaidApi, PlaidEnvironments, Products } from 'plaid';
 import { saveItemAccessToken as dbSaveItemAccessToken } from '@/services/db/plaid/item-access';
 import { submitInput } from '@/services/cartesi';
+import { getServerSession } from 'next-auth';
+import prisma from '@prisma/index';
 
 // return loan application id
 interface InitialiseLoanApplicationResponse {
@@ -193,7 +195,37 @@ export async function submitDebtServiceProof(args: {
   accessToken: string;
   loanApplicationId: string;
 }) {
+  const session = await getServerSession(authOptions);
+  const accountAddress = session?.address;
+
+  if (!accountAddress) {
+    throw new Error('Unauthorized');
+  }
+
   const { accessToken, loanApplicationId } = args;
+
+  // verify ownership of access token and loan application by auth user
+  const [plaidTokenOwnership, loanApplicationOwnership] = await Promise.all([
+    // Verify Plaid token ownership
+    prisma.plaidItemAccessToken.findFirst({
+      where: {
+        accessToken: accessToken,
+        accountAddress: accountAddress,
+      },
+    }),
+
+    // Verify loan application ownership
+    prisma.loanApplication.findFirst({
+      where: {
+        id: loanApplicationId,
+        accountAddress: accountAddress,
+      },
+    }),
+  ]);
+
+  if (!plaidTokenOwnership || !loanApplicationOwnership) {
+    throw new Error('Unauthorized: Resource ownership verification failed');
+  }
 
   const loanApplication = await getLoanApplication({
     loanApplicationId,
@@ -201,6 +233,13 @@ export async function submitDebtServiceProof(args: {
 
   if (!loanApplication) {
     throw new Error('Loan application not found');
+  }
+
+  if (
+    loanApplication.status === LoanApplicationStatus.APPROVED ||
+    loanApplication.status === LoanApplicationStatus.REJECTED
+  ) {
+    throw new Error(`Cannot re-calculate interest rate for ${loanApplication.status} loan`);
   }
 
   try {
