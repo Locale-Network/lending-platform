@@ -31,6 +31,8 @@ Copy the `example.env` file and fill in the missing variables:
 cp .example.env .env
 ```
 
+You need to replace `NEXT_PUBLIC_REOWN_CLOUD_PROJECT_ID` with your own reown (wallet connect project id).
+
 You will need a local instance of postgres:
 ```bash
 docker compose up db
