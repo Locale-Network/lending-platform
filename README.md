@@ -39,7 +39,7 @@ docker compose up db
 Install all modules:
 
 ```bash
-npm i
+npm i --f
 ```
 
 Run the database migrations:
