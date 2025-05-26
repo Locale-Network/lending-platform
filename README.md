@@ -33,6 +33,8 @@ cp .example.env .env
 
 You need to replace `NEXT_PUBLIC_REOWN_CLOUD_PROJECT_ID` with your own reown (wallet connect project id).
 
+You need to replace `CARTESI_PRIVATE_KEY` with your private key from the `loan-pool` repo.
+
 You will need a local instance of postgres:
 ```bash
 docker compose up db
