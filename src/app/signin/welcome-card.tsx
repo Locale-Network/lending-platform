@@ -48,7 +48,7 @@ export default function CardWithForm() {
         </p>
       </CardContent>
       <CardFooter className="flex flex-col items-center space-y-4">
-        <WalletConnectButton label="Sign in with Ethereum" />
+        <WalletConnectButton label="Sign in with Ethereum" signInScreen />
 
         <div className="text-xs text-muted-foreground">
           <Link href="#" className="hover:underline">

@@ -4,16 +4,17 @@ import { useEffect, useState } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
 import { Loader2 } from 'lucide-react';
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import { signIn } from '@/app/signin/actions';
 import { useRouter } from 'next/navigation';
 import { getTokenBalanceAction } from '@/app/actions/token';
 
 interface WalletConnectButtonProps {
   label?: string;
+  signInScreen?: boolean;
 }
 
-const WalletConnectButton = ({ label }: WalletConnectButtonProps) => {
+const WalletConnectButton = ({ label, signInScreen = false }: WalletConnectButtonProps) => {
   const { isConnecting, address, isConnected } = useAccount();
   const { status } = useSession();
   const [balance, setBalance] = useState<number>(0);
@@ -25,10 +26,11 @@ const WalletConnectButton = ({ label }: WalletConnectButtonProps) => {
       })();
     }
 
-    if (status === 'unauthenticated' || !isConnected || !address) {
+    if ((status === 'unauthenticated' || !isConnected || !address) && !signInScreen) {
+      signOut();
       router.push('/signin');
     }
-  }, [status, isConnected, address, router]);
+  }, [status, isConnected, address, router, signInScreen]);
 
   useEffect(() => {
     if (isConnected && address) {
