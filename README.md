@@ -1,103 +1,285 @@
-# Lending Platform
+# Locale Lending Platform
 
-NextJS + Prisma + Sign in with Ethereum
+A decentralized peer-to-peer lending platform built on Cartesi, enabling borrowers to access loans and investors to earn yields through lending pools.
 
-## About
+## Tech Stack
 
-The lending platform provides the user interface which allows both borrowers and approvers to access the system.
+- **Frontend**: Next.js 15, React, TypeScript, Tailwind CSS, shadcn/ui
+- **Backend**: Next.js API Routes, Prisma ORM
+- **Database**: PostgreSQL with Supabase
+- **Authentication**: NextAuth.js with Alchemy Account Kit
+- **Blockchain**: Cartesi, Arbitrum, Ethereum
+- **Wallet Integration**: WalletConnect, Alchemy Account Kit (Embedded & External Wallets)
+- **Identity Verification**: Reclaim Protocol, Plaid
 
-There is some basic backend functionality through a few endpoints. We handle incoming proofs from Reclaim protocol when users connect their bank account.
+## Features
 
-There are also two pages which allow the platform to act as a Reclaim data provider to allow users to complete the proof creation flow.
+### For Investors
 
-### Borrowers
+#### Pool Discovery
+- Browse and filter lending pools by APY, TVL, risk level, and investor count
+- Advanced search with real-time filtering
+- Side-by-side pool comparison tool
+- Detailed pool analytics and performance metrics
 
-- borrowers sign in with their wallet
-- the borrower performs a kyc for their account address
-- after the kyc, the borrower can apply for a loan by creating a loan request
-- during the loan creation process, bank account transaction history as well as credit score are collected in order to process the loan
+#### Portfolio Management
+- Real-time portfolio dashboard with performance charts
+- Asset allocation visualization (pie charts)
+- 30-day performance trend analysis
+- Active stake tracking across multiple pools
+- Earnings history and projections
 
-### Approvers
+#### Analytics Dashboard
+- Platform-wide metrics (Total TVL, Active Pools, Total Investors)
+- TVL growth trends over time
+- APY distribution across pools
+- Investor growth analytics
+- Pool type breakdown
+- Top performing pools ranking
+- Market trends and seasonal insights
 
-- approvers can review and accept/reject a loan application
+#### User Settings
+- Account management with wallet integration
+- Notification preferences (email, investment updates, earnings alerts)
+- Transaction history export
+- Wallet disconnect with confirmation
+
+### For Borrowers
+
+- Sign in with wallet (WalletConnect or Alchemy embedded wallet)
+- KYC verification for account addresses
+- Loan application with bank account verification
+- Credit score integration via Reclaim Protocol
+- Transaction history analysis through Plaid
+
+### For Approvers/Admins
+
+- Review and approve/reject loan applications
+- Manage lending pools (create, edit, archive)
+- Investor management dashboard
+- Pool analytics and performance monitoring
+- Platform-wide statistics
 
 ## Getting Started
 
-First, you should set up the [Loan Pool](https://github.com/Locale-Network/loan-pool) Smart Contracts and Cartesi instance for local development.
+### Prerequisites
 
-Copy the `example.env` file and fill in the missing variables:
+1. Set up the [Loan Pool Smart Contracts](https://github.com/Locale-Network/loan-pool) and Cartesi instance for local development
+2. PostgreSQL database (local or Supabase)
+3. Node.js 18+ and npm
 
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/Locale-Network/lending-platform.git
+cd lending-platform
+```
+
+2. Copy the example environment file:
 ```bash
 cp .example.env .env
 ```
 
-You need to replace `NEXT_PUBLIC_REOWN_CLOUD_PROJECT_ID` with your own reown (wallet connect project id).
+3. Configure environment variables in `.env`:
 
-You need to replace `CARTESI_PRIVATE_KEY` with your private key from the `loan-pool` repo.
+**Required Variables:**
+- `NEXT_PUBLIC_REOWN_CLOUD_PROJECT_ID` - Your Reown (WalletConnect) project ID
+- `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` - WalletConnect project ID for Alchemy
+- `CARTESI_PRIVATE_KEY` - Private key from the loan-pool repo (starts with 0x)
+- `NEXT_PUBLIC_ALCHEMY_API_KEY` - Alchemy API key for Account Kit
+- `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
+- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key
+- `POSTGRES_URL` - PostgreSQL connection string
+- `PLAID_CLIENT_ID` - Plaid client ID for bank verification
+- `PLAID_SECRET` - Plaid secret key
+- `TEMPLATE_ID` - Identity verification template ID
+- `NEXTAUTH_SECRET` - NextAuth secret (generate with `openssl rand -base64 32`)
 
-You will need a local instance of postgres:
+**Optional (Development):**
+- `DISABLE_SBT_CHECKS="true"` - Bypass soulbound token checks during development
+
+4. Start PostgreSQL database (if using Docker):
 ```bash
 docker compose up db
 ```
 
-Install all modules:
-
+5. Install dependencies:
 ```bash
-npm i --f
+npm install --legacy-peer-deps
 ```
 
-Run the database migrations:
+6. Run database migrations:
 ```bash
 npx prisma generate && npx prisma migrate dev
 ```
 
-Run the dev server (for local dev, the local Cartesi machine should be running):
-
-
+7. (Optional) Seed the database with sample pools:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npx tsx prisma/seed-pools.ts
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+8. Start the development server:
+```bash
+npm run dev
+```
 
-## Loan Platform
+9. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-### Sign in
+## User Roles
 
-Sign in with Wallet Connect. This will create an account for you as a "BORROWER".
+### Borrower (Default)
+- Apply for loans
+- Connect bank accounts via Plaid
+- Submit identity verification
+- Track loan status
 
-You can request loans. 
+### Investor
+- Browse and invest in lending pools
+- Track portfolio performance
+- Earn yields from loans
+- Withdraw earnings
 
-If you would like to approve loans, make yourself a "APPROVER".
+### Approver/Admin
+- Review and approve loan applications
+- Manage lending pools
+- Access platform analytics
+- Monitor system health
 
-### Apply for loan
+## Wallet Integration
 
-1. You will be asked to KYC the first time. Follow the instructions on the top right for sandbox data.
-2. Create a new loan application
-3. Submit
+The platform supports multiple wallet connection methods:
 
-### Approve a loan
+### Alchemy Account Kit
+- **Embedded Wallets**: Email-based wallets with passkey support
+- **External Wallets**: MetaMask, Rainbow, Trust Wallet, Rabby, WalletConnect
 
-1. Click on the loan in the list
-2. Hit the approve button and the funds will be sent to the user
+### Supported Networks
+- Arbitrum (Primary)
+- Ethereum Mainnet
+- Base (Testnet support)
 
-## Processing notices
+## API Endpoints
 
-Normally notices are processed through a CRON job on vercel.
+### Pools
+- `GET /api/pools/public` - List all public pools
+- `GET /api/pools/public/[slug]` - Get pool details
+- `POST /api/pools/stake` - Stake in a pool
+- `POST /api/pools/unstake` - Withdraw from a pool
+- `GET /api/pools/[id]/user-stake` - Get user's stake in a pool
 
-Trigger manually:
+### Portfolio
+- `GET /api/portfolio/stakes` - Get user's active stakes
 
-GET http://localhost:3000/api/cron/notices
-with `Authorization: Bearer {CRON_SECRET}`
+### Transactions
+- `GET /api/stake-transactions` - Get stake transaction history
 
-## Deploy on Vercel
+### Admin
+- `GET /api/pools` - List all pools (admin)
+- `POST /api/pools` - Create new pool
+- `PUT /api/pools/[id]` - Update pool
+- `DELETE /api/pools/[id]` - Archive pool
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Database Schema
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+### Core Tables
+- `users` - User accounts and profiles
+- `loan_pools` - Lending pool configurations
+- `user_stakes` - Investor stakes in pools
+- `stake_transactions` - Transaction history
+- `loan_requests` - Borrower loan applications
+- `accounts` - NextAuth account linking
+
+## Processing Notices (Cartesi Integration)
+
+Notices from the Cartesi machine are processed via CRON job on Vercel.
+
+**Manual Trigger:**
+```bash
+curl http://localhost:3000/api/cron/notices \
+  -H "Authorization: Bearer {CRON_SECRET}"
+```
+
+## Production Deployment
+
+### Vercel (Recommended)
+
+1. Connect your GitHub repository to Vercel
+2. Configure environment variables in Vercel dashboard
+3. Deploy automatically on push to main branch
+
+### Environment Setup
+- Production database: Use Supabase or managed PostgreSQL
+- Cartesi node: Deploy to production Cartesi network
+- CRON jobs: Configure via Vercel cron configuration
+
+## Development
+
+### Build for Production
+```bash
+npm run build
+```
+
+### Run Production Build Locally
+```bash
+npm run start
+```
+
+### Database Operations
+```bash
+# Generate Prisma client
+npx prisma generate
+
+# Create new migration
+npx prisma migrate dev --name migration_name
+
+# Push schema without migration (dev only)
+npx prisma db push
+
+# Open Prisma Studio
+npx prisma studio
+```
+
+### Code Quality
+```bash
+# Run linter
+npm run lint
+
+# Run type checking
+npx tsc --noEmit
+```
+
+## Security
+
+- All sensitive configuration is managed via environment variables
+- No secrets are committed to the repository
+- API routes validate user authentication and authorization
+- Database queries use Prisma ORM to prevent SQL injection
+- NextAuth handles secure session management
+- Soulbound NFTs verify investor/borrower status (can be disabled in development)
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is part of the Locale Network ecosystem.
+
+## Links
+
+- [Loan Pool Smart Contracts](https://github.com/Locale-Network/loan-pool)
+- [Cartesi Documentation](https://docs.cartesi.io/)
+- [Alchemy Account Kit](https://www.alchemy.com/account-kit)
+- [Supabase](https://supabase.com/)
+
+## Support
+
+For issues and questions:
+- Open an issue on GitHub
+- Contact the Locale Network team
