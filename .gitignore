@@ -35,5 +35,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# memory bank (local development docs)
+memory-bank/
 
 .locale

@@ -1,9 +1,10 @@
 'use client';
 
-import { Home, HomeIcon, Inbox } from 'lucide-react';
+import { Home, HomeIcon, Inbox, Waves, Plus, BarChart3, Users } from 'lucide-react';
 import { usePathname } from 'next/navigation'; // Add this import
 import { getRoleOfAccount } from '@/app/actions';
 import { useSession } from 'next-auth/react';
+import Image from 'next/image';
 
 import {
   Sidebar,
@@ -21,14 +22,33 @@ import { Role } from '@prisma/client';
 // Menu items.
 const items = [
   {
-    title: 'Home',
+    title: 'Dashboard',
     url: '/admin',
     icon: Home,
   },
+];
+
+// Pool management items
+const poolItems = [
   {
-    title: 'Dashboard',
-    url: '/admin',
-    icon: HomeIcon,
+    title: 'All Pools',
+    url: '/admin/pools',
+    icon: Waves,
+  },
+  {
+    title: 'Create Pool',
+    url: '/admin/pools/create',
+    icon: Plus,
+  },
+  {
+    title: 'Analytics',
+    url: '/admin/pools/analytics',
+    icon: BarChart3,
+  },
+  {
+    title: 'Investors',
+    url: '/admin/investors',
+    icon: Users,
   },
 ];
 
@@ -71,10 +91,36 @@ export default function BorrowerSidebar() {
     <Sidebar>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Application</SidebarGroupLabel>
+          <div className="flex items-center justify-center p-6">
+            <Image
+              src="/logo.svg"
+              alt="Locale Lending"
+              width={200}
+              height={80}
+              priority
+            />
+          </div>
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map(item => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={pathname === item.url}>
+                    <a href={item.url}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </a>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Pool Management</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {poolItems.map(item => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={pathname === item.url}>
                     <a href={item.url}>

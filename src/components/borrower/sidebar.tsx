@@ -4,6 +4,7 @@ import { HandCoins, Home, User } from 'lucide-react';
 import { usePathname } from 'next/navigation'; // Add this import
 import { getRoleOfAccount } from '@/app/actions';
 import { useSession } from 'next-auth/react';
+import Image from 'next/image';
 
 import {
   Sidebar,
@@ -76,7 +77,15 @@ export default function BorrowerSidebar() {
     <Sidebar>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Application</SidebarGroupLabel>
+          <div className="flex items-center justify-center p-6">
+            <Image
+              src="/logo.svg"
+              alt="Locale Lending"
+              width={200}
+              height={80}
+              priority
+            />
+          </div>
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map(item => (

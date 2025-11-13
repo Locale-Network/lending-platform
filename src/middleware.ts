@@ -12,7 +12,7 @@ export default withAuth(
       return NextResponse.redirect(new URL('/signin', req.url));
     }
 
-    const role = token.role || 'BORROWER';
+    const role = token.role || 'INVESTOR';
     const pathRole = req.nextUrl.pathname.split('/')[1];
 
     if (!role) {
@@ -34,5 +34,5 @@ export default withAuth(
 
 // routes that will invoke the middleware
 export const config = {
-  matcher: ['/borrower/:path*', '/approver/:path*', '/admin/:path*', '/'],
+  matcher: ['/explore/:path*', '/borrower/:path*', '/approver/:path*', '/admin/:path*', '/'],
 };

@@ -1,0 +1,194 @@
+// POOL INVESTMENT SYSTEM - Schema Additions
+// Add these to your existing schema.prisma file
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum PoolStatus {
+  DRAFT        // Being configured
+  PENDING      // Awaiting deployment
+  ACTIVE       // Deployed and accepting stakes
+  PAUSED       // Temporarily disabled
+  CLOSED       // No longer accepting new stakes
+  DEPRECATED   // Legacy pool
+}
+
+enum PoolType {
+  GENERAL      // General purpose lending
+  SMALL_BUSINESS
+  REAL_ESTATE
+  WORKING_CAPITAL
+  EQUIPMENT_FINANCING
+  CUSTOM
+}
+
+enum StakeStatus {
+  PENDING     // Transaction pending
+  ACTIVE      // Stake is active
+  UNSTAKING   // Withdrawal initiated
+  WITHDRAWN   // Fully withdrawn
+}
+
+// ============================================
+// UPDATE EXISTING ROLE ENUM
+// ============================================
+// Replace existing Role enum with:
+
+enum Role {
+  BORROWER
+  APPROVER
+  ADMIN
+  INVESTOR  // New role
+}
+
+// ============================================
+// NEW MODELS
+// ============================================
+
+model LoanPool {
+  id                String     @id @default(cuid())
+
+  // Pool Identity
+  name              String     @db.VarChar(255)
+  slug              String     @unique @db.VarChar(255)
+  description       String     @db.Text
+  type              PoolType   @default(GENERAL)
+  status            PoolStatus @default(DRAFT)
+
+  // Smart Contract Info
+  contractAddress   String?    @unique @db.VarChar(255)
+  tokenAddress      String?    @db.VarChar(255)
+  chainId           Int        @default(42161)
+
+  // Pool Parameters
+  minimumStake      Float      @default(100)
+  targetSize        Float
+  maxSize           Float?
+  managementFee     Float      @default(0.02)
+  performanceFee    Float      @default(0.10)
+
+  // Interest Rate Configuration
+  baseInterestRate     Float   @default(0.05)
+  riskPremiumMin       Float   @default(0.02)
+  riskPremiumMax       Float   @default(0.15)
+
+  // Risk Parameters
+  maxLoanToValue       Float   @default(0.80)
+  minimumCreditScore   Int     @default(650)
+  allowedIndustries    String? @db.Text
+
+  // Statistics
+  totalStaked          Float   @default(0)
+  totalLent            Float   @default(0)
+  availableLiquidity   Float   @default(0)
+  activeLoans          Int     @default(0)
+  totalInvestors       Int     @default(0)
+  annualizedReturn     Float?
+
+  // Metadata
+  imageUrl             String? @db.VarChar(500)
+  featured             Boolean @default(false)
+  order                Int     @default(0)
+
+  // Relations
+  stakes               InvestorStake[]
+  loans                PoolLoan[]
+
+  // Manager
+  managerId            String  @map("manager_id") @db.VarChar(255)
+  manager              Account @relation(fields: [managerId], references: [address], onDelete: Restrict)
+
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([type])
+  @@index([slug])
+  @@index([managerId])
+  @@map("loan_pools")
+}
+
+model InvestorStake {
+  id                String      @id @default(cuid())
+
+  // Pool and Investor
+  poolId            String      @map("pool_id")
+  pool              LoanPool    @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  investorAddress   String      @map("investor_address") @db.VarChar(255)
+  investor          Account     @relation(fields: [investorAddress], references: [address], onDelete: Cascade)
+
+  // Stake Details
+  amount            Float
+  shares            Float
+
+  // Performance Tracking
+  initialAmount     Float       @map("initial_amount")
+  totalRewards      Float       @default(0) @map("total_rewards")
+  totalWithdrawn    Float       @default(0) @map("total_withdrawn")
+
+  // Status
+  status            StakeStatus @default(PENDING)
+
+  // Blockchain Data
+  stakeTransactionHash    String? @map("stake_tx_hash") @db.VarChar(255)
+  unstakeTransactionHash  String? @map("unstake_tx_hash") @db.VarChar(255)
+
+  stakedAt          DateTime?   @map("staked_at")
+  unstakeInitiatedAt DateTime?  @map("unstake_initiated_at")
+
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  @@unique([poolId, investorAddress])
+  @@index([investorAddress])
+  @@index([poolId])
+  @@index([status])
+  @@map("investor_stakes")
+}
+
+model PoolLoan {
+  id                String          @id @default(cuid())
+
+  poolId            String          @map("pool_id")
+  pool              LoanPool        @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  loanApplicationId String          @unique @map("loan_application_id")
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  // Loan Terms
+  interestRate      Float
+  amount            Float
+  remainingMonths   Int             @map("remaining_months")
+
+  assignedAt        DateTime        @default(now()) @map("assigned_at")
+
+  @@index([poolId])
+  @@map("pool_loans")
+}
+
+// ============================================
+// UPDATES TO EXISTING MODELS
+// ============================================
+
+// Add to Account model:
+model Account {
+  // ... existing fields ...
+
+  // NEW: Investor relations
+  investorStakes   InvestorStake[]
+  managedPools     LoanPool[]
+
+  // ... existing relations ...
+}
+
+// Add to LoanApplication model:
+model LoanApplication {
+  // ... existing fields ...
+
+  // NEW: Pool assignment
+  poolLoan         PoolLoan?
+
+  // ... existing relations ...
+}

@@ -1,0 +1,53 @@
+// Add these to the existing schema.prisma file after the StakeStatus enum
+
+enum TransactionType {
+  STAKE
+  UNSTAKE
+  CLAIM_REWARDS
+  POOL_DEPOSIT
+  POOL_WITHDRAWAL
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// Add this model at the end of the file
+
+// Transaction history for stakes
+model StakeTransaction {
+  id String @id @default(cuid())
+
+  investorAddress String  @map("investor_address") @db.VarChar(255)
+  investor        Account @relation(fields: [investorAddress], references: [address], onDelete: Cascade)
+
+  poolId String   @map("pool_id")
+  pool   LoanPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  type                TransactionType   @map("type")
+  amount              Float
+  shares              Float?
+  status              TransactionStatus @default(PENDING)
+  transactionHash     String?           @map("transaction_hash") @db.VarChar(255)
+  blockchainConfirmed Boolean           @default(false) @map("blockchain_confirmed")
+  errorMessage        String?           @map("error_message") @db.Text
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([investorAddress])
+  @@index([poolId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("stake_transactions")
+}
+
+// Update Account model - add this line to the relations section:
+// stakeTransactions    StakeTransaction[]
+
+// Update LoanPool model - add this line to the relations section:
+// transactions StakeTransaction[]

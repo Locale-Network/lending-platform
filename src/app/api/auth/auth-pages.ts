@@ -7,6 +7,7 @@ export const authPages: Partial<PagesOptions> = {
 };
 
 export const ROLE_REDIRECTS: Record<Role, string> = {
+  INVESTOR: '/explore',
   BORROWER: '/borrower',
   APPROVER: '/approver',
   ADMIN: '/admin',
@@ -15,5 +16,6 @@ export const ROLE_REDIRECTS: Record<Role, string> = {
 export const ROLE_ACCESS: Record<Role, string[]> = {
   ADMIN: ['admin', 'approver'], // Admin can access admin and approver routes
   APPROVER: ['approver'], // Approver can only access approver routes
+  INVESTOR: ['explore'], // Investor can only access explore routes (staking pools)
   BORROWER: ['borrower'], // Borrower can only access borrower routes
 } as const;

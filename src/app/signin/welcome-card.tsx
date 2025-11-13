@@ -5,9 +5,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import WalletConnectButton from '@/components/wallet-connect-button';
+import AlchemyWalletButton from '@/components/alchemy-wallet-button';
 import { useSession } from 'next-auth/react';
-import { useAccount } from 'wagmi';
+import { useUser } from '@account-kit/react';
 import { useRouter } from 'next/navigation';
 import { ROLE_REDIRECTS } from '@/app/api/auth/auth-pages';
 
@@ -16,7 +16,9 @@ import { ROLE_REDIRECTS } from '@/app/api/auth/auth-pages';
 export default function CardWithForm() {
   const router = useRouter();
   const { status, data: session } = useSession();
-  const { isConnected, address } = useAccount();
+  const user = useUser();
+  const address = user?.address;
+  const isConnected = !!address;
 
   React.useEffect(() => {
     if (status === 'authenticated' && isConnected && address) {
@@ -30,17 +32,25 @@ export default function CardWithForm() {
 
   return (
     <Card className="w-[350px]">
-      <CardHeader className="flex flex-col items-center">
-        <div className="mb-4 h-24 w-24 overflow-hidden rounded-full">
+      <CardHeader className="flex flex-col items-center pb-3">
+        <div className="mb-2 h-32 w-32 overflow-hidden rounded-full">
           <Image
             src="https://images.squarespace-cdn.com/content/v1/66c4ab9d1cc12e32b4138e7e/f4e716cf-7a6e-44c5-a8cd-24b47dec43a1/favicon.ico?format=100w"
             alt="Project icon"
-            width={96}
-            height={96}
+            width={128}
+            height={128}
             className="object-cover"
           />
         </div>
-        <CardTitle className="text-center">Locale Lending</CardTitle>
+        <div className="flex items-center justify-center">
+          <Image
+            src="/locale-lending-logo.svg"
+            alt="Locale Lending"
+            width={240}
+            height={96}
+            priority
+          />
+        </div>
       </CardHeader>
       <CardContent>
         <p className="text-center text-sm text-muted-foreground">
@@ -48,7 +58,7 @@ export default function CardWithForm() {
         </p>
       </CardContent>
       <CardFooter className="flex flex-col items-center space-y-4">
-        <WalletConnectButton label="Sign in with Ethereum" signInScreen />
+        <AlchemyWalletButton label="Sign in with Alchemy" signInScreen />
 
         <div className="text-xs text-muted-foreground">
           <Link href="#" className="hover:underline">
