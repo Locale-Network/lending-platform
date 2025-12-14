@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
-    "vercel-build": "prisma generate && prisma migrate deploy && next build",
+    "vercel-build": "prisma generate && next build",
     "format": "npx prettier --write .",
     "format:check": "npx prettier --check .",
     "relay": "tsx scripts/run-relay.ts",
