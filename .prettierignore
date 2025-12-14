@@ -1,0 +1,29 @@
+# Build outputs
+.next/
+build/
+dist/
+out/
+
+# Dependencies
+node_modules/
+
+# Cache
+.cache/
+.eslintcache
+
+# Environment files
+.env*
+!.env.example
+
+# Logs
+*.log
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db 

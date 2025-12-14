@@ -1,0 +1,564 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Uses connection pooling
+  url       = env("POSTGRES_URL")
+  // Uses direct connection, ⚠️ make sure to keep this to `POSTGRES_URL_NON_POOLING`
+  // or you'll have dangling databases from migrations
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+// https://plaid.com/docs/api/products/transactions/
+model Transaction {
+  id            Int       @id @default(autoincrement())
+  transactionId String?   @map("transaction_id") @db.VarChar(255)
+  accountId     String?   @map("account_id") @db.VarChar(255)
+  amount        Float?
+  currency      String?   @db.VarChar(255)
+  merchant      String?   @db.VarChar(255)
+  merchantId    String?   @map("merchant_id") @db.VarChar(255)
+  date          DateTime? @default(now())
+  isDeleted     Boolean   @default(false) @map("is_deleted")
+
+  // Link to loan application for DSCR monitoring
+  loanApplicationId String?          @map("loan_application_id")
+  loanApplication   LoanApplication? @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  @@index([loanApplicationId])
+  @@index([date])
+  @@map("transactions")
+}
+
+// https://plaid.com/docs/api/products/identity-verification/#identity_verificationget
+enum KYCVerificationStatus {
+  active
+  success
+  failed
+  expired
+  canceled
+  pending_review
+}
+
+// chain account identity verification with PLAID
+// https://plaid.com/docs/api/products/identity-verification/
+model KYCVerification {
+  identityVerificationId String @id @map("identity_verification_id") @db.VarChar(255)
+
+  accountAddress String  @unique @map("account_address") @db.VarChar(255)
+  account        Account @relation(fields: [accountAddress], references: [address], onDelete: Cascade)
+
+  status    KYCVerificationStatus @default(active)
+  createdAt DateTime              @default(now()) @map("created_at")
+  updatedAt DateTime              @updatedAt @map("updated_at")
+  attempts  Int                   @default(1)
+
+  @@index([accountAddress])
+  @@map("kyc_verifications")
+}
+
+enum Role {
+  INVESTOR // Default - can invest in loan pools
+  BORROWER // Can apply for loans
+  APPROVER // Can approve loans (database-managed)
+  ADMIN // Full access (database-managed)
+}
+
+// accounts from the Arbitrum chain
+model Account {
+  // Primary identifier (Smart Account address - the Locale identity)
+  address String @id @db.VarChar(255)
+
+  // EOA wallet address (the underlying wallet controlling the smart account)
+  // This is the address users see in MetaMask/external wallets
+  // Can be updated via smart account ownership transfer
+  eoaAddress String? @map("eoa_address") @db.VarChar(255)
+
+  // Alchemy Account Kit integration
+  alchemyUserId String? @unique @map("alchemy_user_id")
+  email         String?
+  authProvider  String? @map("auth_provider") // "email" | "google" | "apple" | "passkey" | "wallet"
+
+  // Role management (database-based for ADMIN/APPROVER only)
+  role Role @default(INVESTOR)
+
+  // Soulbound NFT tracking (for BORROWER/INVESTOR credentials)
+  borrowerNFTTokenId String? @map("borrower_nft_token_id")
+  investorNFTTokenId String? @map("investor_nft_token_id")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  KYCVerification         KYCVerification?
+  plaidItemAccessToken    PlaidItemAccessToken[]
+  loanApplications        LoanApplication[]
+  investorStakes          InvestorStake[]
+  notificationPreferences NotificationPreferences?
+
+  @@map("accounts")
+}
+
+// User notification preferences
+model NotificationPreferences {
+  id String @id @default(cuid())
+
+  accountAddress String  @unique @map("account_address") @db.VarChar(255)
+  account        Account @relation(fields: [accountAddress], references: [address], onDelete: Cascade)
+
+  // Email notification settings
+  emailNotifications Boolean @default(true) @map("email_notifications")
+  investmentUpdates  Boolean @default(true) @map("investment_updates")
+  earningsAlerts     Boolean @default(true) @map("earnings_alerts")
+  poolUpdates        Boolean @default(false) @map("pool_updates")
+  marketingEmails    Boolean @default(false) @map("marketing_emails")
+  securityAlerts     Boolean @default(true) @map("security_alerts") // Always true, cannot be disabled
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("notification_preferences")
+}
+
+// plaid items authorised by chain account
+model PlaidItemAccessToken {
+  id          Int    @id @default(autoincrement())
+  accessToken String @map("access_token") @db.VarChar(255)
+  itemId      String @map("item_id") @db.VarChar(255)
+
+  // account
+  accountAddress String  @map("account_address") @db.VarChar(255)
+  account        Account @relation(fields: [accountAddress], references: [address], onDelete: Cascade)
+
+  // loan
+  loanApplicationId String          @map("loan_application_id")
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("plaid_item_access_tokens")
+}
+
+enum LoanApplicationStatus {
+  DRAFT
+  PENDING
+  SUBMITTED
+  ADDITIONAL_INFO_NEEDED
+  APPROVED
+  DISBURSED
+  ACTIVE
+  REPAID
+  REJECTED
+  DEFAULTED
+}
+
+model LoanApplication {
+  id String @id @default(cuid())
+
+  accountAddress String  @map("account_address") @db.VarChar(255)
+  account        Account @relation(fields: [accountAddress], references: [address], onDelete: Cascade)
+
+  // business information
+  businessLegalName       String  @map("business_legal_name") @db.VarChar(255)
+  businessAddress         String  @map("business_address") @db.VarChar(255)
+  businessState           String  @map("business_state") @db.VarChar(255)
+  businessCity            String  @map("business_city") @db.VarChar(255)
+  businessZipCode         String  @map("business_zip_code") @db.VarChar(255)
+  ein                     String  @map("ein") @db.VarChar(255)
+  businessFoundedYear     Int     @map("business_founded_year")
+  businessLegalStructure  String  @map("business_legal_structure") @db.VarChar(255)
+  businessWebsite         String? @map("business_website")
+  businessPrimaryIndustry String  @map("business_primary_industry") @db.VarChar(255)
+  businessDescription     String  @map("business_description") @db.VarChar(255)
+
+  // Credit Score
+  creditScore CreditScore[]
+
+  // Debt service
+  debtService DebtService[]
+
+  // Plaid access token
+  plaidItemAccessToken PlaidItemAccessToken[]
+  plaidAccessToken     String?                @map("plaid_access_token") @db.VarChar(255)
+
+  // Transaction sync metadata
+  plaidTransactionsCursor String?   @map("plaid_transactions_cursor") @db.Text
+  lastSyncedAt            DateTime? @map("last_synced_at")
+  transactionWindowMonths Int?      @default(3) @map("transaction_window_months")
+
+  // Transactions linked to this loan
+  transactions Transaction[]
+
+  // DSCR calculation logs
+  dscrCalculationLogs DSCRCalculationLog[]
+
+  // Pending rate changes
+  pendingRateChanges PendingRateChange[]
+
+  // Current Loans
+  hasOutstandingLoans Boolean           @default(false) @map("has_outstanding_loans")
+  outstandingLoans    OutstandingLoan[]
+
+  // Pool funding
+  poolLoans PoolLoan[]
+
+  // LendScore (Plaid cash-flow based credit assessment)
+  lendScore              Int?      @map("lend_score") // 1-99
+  lendScoreReasonCodes   String[]  @map("lend_score_reason_codes")
+  lendScoreRetrievedAt   DateTime? @map("lend_score_retrieved_at")
+
+  // Loan amount (scaled by token decimals, e.g., 1000000000 = 1000 USDC)
+  loanAmount BigInt? @map("loan_amount")
+
+  // NEW: Loan Details (from form step 2)
+  requestedAmount       BigInt?  @map("requested_amount") // Amount in cents or smallest unit
+  fundingUrgency        String?  @map("funding_urgency") @db.VarChar(50) // within_week, within_2_weeks, within_month, just_browsing
+  loanPurpose           String?  @map("loan_purpose") @db.VarChar(100) // expansion, equipment_purchase, etc.
+
+  // NEW: Credit Score (from form step 3 - self-reported)
+  estimatedCreditScore  String?  @map("estimated_credit_score") @db.VarChar(20) // excellent, good, fair, poor
+
+  // NEW: Terms Agreement (from form step 6)
+  agreedToTerms         Boolean  @default(false) @map("agreed_to_terms")
+  agreedToTermsAt       DateTime? @map("agreed_to_terms_at")
+
+  isSubmitted Boolean               @default(false) @map("is_submitted")
+  status      LoanApplicationStatus @default(DRAFT) @map("status")
+  amount      Float?                @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([accountAddress])
+  @@map("loan_applications")
+}
+
+model OutstandingLoan {
+  id String @id @default(cuid())
+
+  loanApplicationId String          @map("loan_application_id")
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  lenderName         String   @map("lender_name") @db.VarChar(255)
+  loanType           String   @map("loan_type") @db.VarChar(255)
+  outstandingBalance Float    @map("outstanding_balance")
+  monthlyPayment     Float    @map("monthly_payment")
+  remainingMonths    Int      @map("remaining_months")
+  annualInterestRate Float    @map("annual_interest_rate")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([loanApplicationId])
+  @@map("outstanding_loans")
+}
+
+// credit score associated with a loan application
+model CreditScore {
+  id String @id @default(cuid())
+
+  loanApplicationId String          @map("loan_application_id")
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  creditScoreEquifax    Int @map("credit_score_equifax")
+  creditScoreTransUnion Int @map("credit_score_transunion")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([loanApplicationId])
+  @@map("credit_scores")
+}
+
+// debt service associated with a loan application
+model DebtService {
+  id String @id @default(cuid())
+
+  loanApplicationId String          @map("loan_application_id")
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  transactionCount Int @default(0) @map("transaction_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([loanApplicationId])
+  @@map("debt_services")
+}
+
+// Track processed notice indexes
+model Notice {
+  id        Int      @id
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("notices")
+}
+
+// ============================================
+// MULTI-POOL INVESTMENT SYSTEM
+// ============================================
+
+enum PoolStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  CLOSED
+}
+
+enum PoolType {
+  SMALL_BUSINESS
+  REAL_ESTATE
+  CONSUMER
+  MIXED
+}
+
+enum StakeStatus {
+  ACTIVE
+  UNSTAKING
+  WITHDRAWN
+}
+
+// Investment pools for lending
+model LoanPool {
+  id          String     @id @default(cuid())
+  name        String     @db.VarChar(255)
+  slug        String     @unique @db.VarChar(255)
+  description String     @db.Text
+  poolType    PoolType   @map("pool_type")
+  status      PoolStatus @default(DRAFT)
+
+  // Pool parameters
+  poolSize           Float @map("pool_size") // Total target size
+  minimumStake       Float @map("minimum_stake")
+  managementFeeRate  Float @map("management_fee_rate") // Annual % fee
+  performanceFeeRate Float @map("performance_fee_rate") // % of profits
+  baseInterestRate   Float @map("base_interest_rate")
+  riskPremiumMin     Float @map("risk_premium_min")
+  riskPremiumMax     Float @map("risk_premium_max")
+
+  // Risk parameters
+  minCreditScore    Int?     @map("min_credit_score")
+  maxLTV            Float?   @map("max_ltv") // Max loan-to-value ratio
+  allowedIndustries String[] @map("allowed_industries")
+
+  // Smart contract integration (reference to StakingPool contract)
+  contractAddress String? @map("contract_address") @db.VarChar(255)
+
+  // On-chain pool tracking (synced with StakingPool.sol)
+  contractPoolId  String? @unique @map("contract_pool_id") @db.VarChar(66) // bytes32 as hex
+  deployTxHash    String? @map("deploy_tx_hash") @db.VarChar(66)
+  deployedAtBlock Int?    @map("deployed_at_block")
+  isOnChain       Boolean @default(false) @map("is_on_chain")
+
+  // Calculated fields (updated by backend)
+  totalStaked        Float  @default(0) @map("total_staked")
+  totalInvestors     Int    @default(0) @map("total_investors")
+  availableLiquidity Float  @default(0) @map("available_liquidity")
+  annualizedReturn   Float? @map("annualized_return") // Actual APY
+
+  // Metadata
+  imageUrl   String? @map("image_url") @db.VarChar(500)
+  isFeatured Boolean @default(false) @map("is_featured")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  stakes InvestorStake[]
+  loans  PoolLoan[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([poolType])
+  @@map("loan_pools")
+}
+
+// Individual investor stakes in pools
+model InvestorStake {
+  id String @id @default(cuid())
+
+  poolId String   @map("pool_id")
+  pool   LoanPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  investorAddress String  @map("investor_address") @db.VarChar(255)
+  investor        Account @relation(fields: [investorAddress], references: [address], onDelete: Cascade)
+
+  // Stake details
+  stakedAmount Float       @map("staked_amount")
+  shares       Float // Pool shares owned
+  status       StakeStatus @default(ACTIVE)
+
+  // Returns tracking
+  earnedInterest  Float @default(0) @map("earned_interest")
+  claimedInterest Float @default(0) @map("claimed_interest")
+
+  stakedAt   DateTime  @default(now()) @map("staked_at")
+  unstakedAt DateTime? @map("unstaked_at")
+
+  @@unique([poolId, investorAddress])
+  @@index([investorAddress])
+  @@index([poolId])
+  @@map("investor_stakes")
+}
+
+// Track which loans belong to which pools
+model PoolLoan {
+  id String @id @default(cuid())
+
+  poolId String   @map("pool_id")
+  pool   LoanPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  loanApplicationId String          @map("loan_application_id")
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  // Loan parameters at time of funding
+  principal    Float @map("principal")
+  interestRate Float @map("interest_rate")
+  termMonths   Int   @map("term_months")
+
+  fundedAt       DateTime @default(now()) @map("funded_at")
+  expectedReturn Float    @map("expected_return")
+
+  @@unique([poolId, loanApplicationId])
+  @@index([poolId])
+  @@index([loanApplicationId])
+  @@map("pool_loans")
+}
+
+// ============================================
+// CONTINUOUS DSCR MONITORING SYSTEM
+// ============================================
+
+enum DSCRCalculationStatus {
+  SUBMITTED // Submitted to Cartesi
+  PROCESSING // Being processed by Cartesi
+  COMPLETED // Calculation complete, notice received
+  FAILED // Calculation failed
+}
+
+// Track DSCR calculation submissions to Cartesi
+model DSCRCalculationLog {
+  id String @id @default(cuid())
+
+  loanApplicationId String          @map("loan_application_id")
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  transactionCount Int                   @map("transaction_count")
+  windowMonths     Int                   @map("window_months")
+  status           DSCRCalculationStatus @default(SUBMITTED)
+
+  // Results (populated when notice is received)
+  calculatedRate Float? @map("calculated_rate")
+  noticeIndex    Int?   @map("notice_index")
+
+  submittedAt DateTime  @default(now()) @map("submitted_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([loanApplicationId])
+  @@index([status])
+  @@map("dscr_calculation_logs")
+}
+
+enum RateChangeStatus {
+  PENDING // Waiting for approval
+  APPROVED // Approved, ready to execute
+  REJECTED // Rejected by admin
+  EXECUTED // Applied to smart contract
+  FAILED // Execution failed
+}
+
+// Track pending interest rate changes requiring approval
+model PendingRateChange {
+  id String @id @default(cuid())
+
+  loanApplicationId String          @map("loan_application_id")
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  currentRate    Float  @map("current_rate")
+  proposedRate   Float  @map("proposed_rate")
+  rateChangePct  Float  @map("rate_change_pct") // Percentage change
+  calculatedDSCR Float? @map("calculated_dscr")
+
+  status RateChangeStatus @default(PENDING)
+
+  // Approval metadata
+  approvedBy      String?   @map("approved_by") @db.VarChar(255)
+  approvedAt      DateTime? @map("approved_at")
+  rejectionReason String?   @map("rejection_reason") @db.Text
+
+  // Execution metadata
+  txHash        String?   @map("tx_hash") @db.VarChar(255)
+  executedAt    DateTime? @map("executed_at")
+  failureReason String?   @map("failure_reason") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([loanApplicationId])
+  @@index([status])
+  @@map("pending_rate_changes")
+}
+
+// ============================================
+// EMAIL NOTIFICATION SYSTEM (Foundation)
+// ============================================
+
+enum EmailNotificationType {
+  LOAN_APPROVED
+  LOAN_DISBURSED
+  LOAN_REJECTED
+  PAYMENT_DUE
+  PAYMENT_RECEIVED
+  STAKE_CONFIRMED
+  UNSTAKE_READY
+  SECURITY_ALERT
+  POOL_UPDATE
+  MARKETING
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+// Email notification queue - for future email sending
+model EmailNotification {
+  id String @id @default(cuid())
+
+  // Recipient
+  recipientAddress String  @map("recipient_address") @db.VarChar(255)
+  recipientEmail   String  @map("recipient_email") @db.VarChar(255)
+
+  // Email content
+  type    EmailNotificationType
+  subject String                @db.VarChar(500)
+  body    String                @db.Text
+
+  // Template data (JSON for dynamic content)
+  templateData String? @map("template_data") @db.Text
+
+  // Status tracking
+  status       EmailStatus @default(PENDING)
+  errorMessage String?     @map("error_message") @db.Text
+  retryCount   Int         @default(0) @map("retry_count")
+
+  // Scheduling
+  scheduledFor DateTime? @map("scheduled_for")
+  sentAt       DateTime? @map("sent_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([type])
+  @@index([recipientAddress])
+  @@index([scheduledFor])
+  @@map("email_notifications")
+}
+

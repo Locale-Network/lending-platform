@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  db:
+    container_name: db-locale
+    build:
+      context: .
+      dockerfile: ./.docker/db/Dockerfile
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - ./.locale/data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: on-failure
+    healthcheck:
+      test: "exit 0"
