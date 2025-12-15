@@ -9,6 +9,9 @@ const nextConfig = {
   // Required for zkFetch (Reclaim Protocol) to work properly
   serverExternalPackages: ['koffi', '@reclaimprotocol/zk-fetch'],
 
+  // Turbopack config for Next.js 16
+  turbopack: {},
+
   webpack: config => {
     config.resolve.fallback = { fs: false, net: false, tls: false };
     config.externals.push('pino-pretty', 'lokijs', 'encoding');
