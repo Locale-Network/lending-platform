@@ -123,7 +123,7 @@ export default function PrivyWalletButton({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           address,
-          alchemyUserId: privyUserId, // Field named alchemyUserId for backwards compatibility
+          privyUserId,
           email: email || undefined,
           authProvider,
         }),

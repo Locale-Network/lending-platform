@@ -77,8 +77,8 @@ model Account {
   // Can be updated via smart account ownership transfer
   eoaAddress String? @map("eoa_address") @db.VarChar(255)
 
-  // Alchemy Account Kit integration
-  alchemyUserId String? @unique @map("alchemy_user_id")
+  // Privy authentication
+  privyUserId String? @unique @map("privy_user_id")
   email         String?
   authProvider  String? @map("auth_provider") // "email" | "google" | "apple" | "passkey" | "wallet"
 

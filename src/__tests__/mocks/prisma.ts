@@ -59,7 +59,7 @@ export const mockTransaction = (overrides: Record<string, unknown> = {}) => ({
 export const mockAccount = (overrides: Record<string, unknown> = {}) => ({
   address: '0x1234567890123456789012345678901234567890',
   eoaAddress: '0x0987654321098765432109876543210987654321',
-  alchemyUserId: 'alchemy-user-123',
+  privyUserId: 'privy-user-123',
   email: 'test@example.com',
   authProvider: 'email',
   role: 'BORROWER',

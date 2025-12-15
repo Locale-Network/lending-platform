@@ -22,7 +22,7 @@ import { checkRateLimit, getClientIp, rateLimits, rateLimitHeaders } from '@/lib
 
 interface SyncRequest {
   address: string;
-  alchemyUserId: string; // Named for backwards compatibility, stores Privy user ID
+  privyUserId: string;
   email?: string;
   authProvider: 'email' | 'google' | 'apple' | 'passkey' | 'wallet';
 }
@@ -41,12 +41,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body: SyncRequest = await request.json();
-    const { address, alchemyUserId: privyUserId, email, authProvider } = body;
+    const { address, privyUserId, email, authProvider } = body;
 
     // Validate required fields
     if (!address || !privyUserId || !authProvider) {
       return NextResponse.json(
-        { error: 'Missing required fields: address, alchemyUserId (privyUserId), authProvider' },
+        { error: 'Missing required fields: address, privyUserId, authProvider' },
         { status: 400 }
       );
     }
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         where: { address: normalizedAddress },
       }),
       prisma.account.findUnique({
-        where: { alchemyUserId: privyUserId },
+        where: { privyUserId: privyUserId },
       }),
     ]);
 
@@ -69,13 +69,13 @@ export async function POST(request: NextRequest) {
       console.log('[AuthSync] Found existing account by address:', {
         address: existingByAddress.address,
         existingRole: existingByAddress.role,
-        existingPrivyId: existingByAddress.alchemyUserId,
+        existingPrivyId: existingByAddress.privyUserId,
         incomingPrivyId: privyUserId,
       });
 
       // Check if this account is already linked to a DIFFERENT Privy user
       // If so, reject the sync - this wallet belongs to another Privy account
-      if (existingByAddress.alchemyUserId && existingByAddress.alchemyUserId !== privyUserId) {
+      if (existingByAddress.privyUserId && existingByAddress.privyUserId !== privyUserId) {
         console.log('[AuthSync] Wallet already linked to different Privy account');
         return NextResponse.json(
           {
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
       const updatedAccount = await prisma.account.update({
         where: { address: normalizedAddress },
         data: {
-          alchemyUserId: privyUserId, // Field stores Privy user ID
+          privyUserId: privyUserId,
           email: email || existingByAddress.email,
           authProvider: authProvider,
         },
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
           address: true,
           role: true,
           email: true,
-          alchemyUserId: true,
+          privyUserId: true,
         },
       });
 
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
     const newAccount = await prisma.account.create({
       data: {
         address: normalizedAddress,
-        alchemyUserId: privyUserId, // Field stores Privy user ID
+        privyUserId: privyUserId,
         email: email || null,
         authProvider: authProvider,
         role: Role.INVESTOR, // Default role for new users
