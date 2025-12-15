@@ -326,11 +326,6 @@ export default function PrivyWalletButton({
           <DropdownMenuLabel>My Account</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem className="font-mono text-xs">{shortenedAddress}</DropdownMenuItem>
-          {authState?.role && (
-            <DropdownMenuItem className="text-xs text-muted-foreground">
-              Role: {authState.role}
-            </DropdownMenuItem>
-          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {

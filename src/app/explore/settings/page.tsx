@@ -10,15 +10,10 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { User, Bell, Shield, Wallet, Check, Copy, ExternalLink, Download, Pencil, X, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
+import { User, Bell, Wallet, Check, Copy, ExternalLink, Download, Pencil, X, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
 import { useWalletAuth } from '@/hooks/useWalletAuth';
 import { updateEmailAction, getAccountEmailAction } from '@/app/actions/account';
-import {
-  getNotificationPreferencesAction,
-  updateNotificationPreferencesAction,
-  getInvestorVerificationStatusAction,
-  type NotificationPreferences as NotificationPrefsType,
-} from '@/app/actions/settings';
+import { getInvestorVerificationStatusAction } from '@/app/actions/settings';
 
 export default function SettingsPage() {
   return (
@@ -39,10 +34,6 @@ export default function SettingsPage() {
 
         <Suspense fallback={<SettingsSkeleton />}>
           <NotificationSettings />
-        </Suspense>
-
-        <Suspense fallback={<SettingsSkeleton />}>
-          <SecuritySettings />
         </Suspense>
 
         <Suspense fallback={<SettingsSkeleton />}>
@@ -510,95 +501,7 @@ function InvestorVerificationSettings() {
 }
 
 function NotificationSettings() {
-  const { toast } = useToast();
-  const { address, isConnected } = useWalletAuth();
-  const [notifications, setNotifications] = useState<NotificationPrefsType>({
-    emailNotifications: true,
-    investmentUpdates: true,
-    earningsAlerts: true,
-    poolUpdates: false,
-    marketingEmails: false,
-    securityAlerts: true,
-  });
-  const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [hasChanges, setHasChanges] = useState(false);
-  const [savedPrefs, setSavedPrefs] = useState<NotificationPrefsType | null>(null);
-
-  // Load preferences from database
-  useEffect(() => {
-    async function loadPreferences() {
-      if (!address) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const prefs = await getNotificationPreferencesAction();
-        if (prefs) {
-          setNotifications(prefs);
-          setSavedPrefs(prefs);
-        }
-      } catch (error) {
-        console.error('Failed to load preferences:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadPreferences();
-  }, [address]);
-
-  const updateNotification = (key: keyof NotificationPrefsType, value: boolean) => {
-    if (key === 'securityAlerts') return; // Cannot disable security alerts
-    setNotifications(prev => {
-      const updated = { ...prev, [key]: value };
-      // Check if there are changes from saved preferences
-      if (savedPrefs) {
-        const hasChanges = Object.keys(updated).some(
-          k => k !== 'securityAlerts' && updated[k as keyof NotificationPrefsType] !== savedPrefs[k as keyof NotificationPrefsType]
-        );
-        setHasChanges(hasChanges);
-      }
-      return updated;
-    });
-  };
-
-  const savePreferences = async () => {
-    setSaving(true);
-    try {
-      const result = await updateNotificationPreferencesAction({
-        emailNotifications: notifications.emailNotifications,
-        investmentUpdates: notifications.investmentUpdates,
-        earningsAlerts: notifications.earningsAlerts,
-        poolUpdates: notifications.poolUpdates,
-        marketingEmails: notifications.marketingEmails,
-      });
-
-      if (result.success && result.preferences) {
-        setSavedPrefs(result.preferences);
-        setHasChanges(false);
-        toast({
-          title: 'Saved!',
-          description: 'Your notification preferences have been updated',
-        });
-      } else {
-        toast({
-          title: 'Error',
-          description: result.message,
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to save preferences',
-        variant: 'destructive',
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
+  const { isConnected } = useWalletAuth();
 
   if (!isConnected) {
     return (
@@ -619,39 +522,20 @@ function NotificationSettings() {
     );
   }
 
-  if (loading) {
-    return (
-      <Card>
-        <CardHeader>
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Bell className="h-5 w-5" />
             <CardTitle>Notification Preferences</CardTitle>
           </div>
-          <CardDescription>Loading your preferences...</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="flex items-center justify-between">
-              <Skeleton className="h-10 w-3/4" />
-              <Skeleton className="h-6 w-10" />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <Bell className="h-5 w-5" />
-          <CardTitle>Notification Preferences</CardTitle>
+          <Badge variant="secondary" className="text-xs">Coming Soon</Badge>
         </div>
         <CardDescription>Choose what notifications you want to receive</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between opacity-60">
           <div className="space-y-0.5">
             <Label htmlFor="email-notifications">Email Notifications</Label>
             <p className="text-sm text-muted-foreground">
@@ -660,17 +544,18 @@ function NotificationSettings() {
           </div>
           <Switch
             id="email-notifications"
-            checked={notifications.emailNotifications}
-            onCheckedChange={(checked) => updateNotification('emailNotifications', checked)}
+            checked={false}
+            disabled
+            className="opacity-100"
           />
         </div>
 
         <Separator />
 
         <div className="space-y-4">
-          <p className="text-sm font-medium">Investment Notifications</p>
+          <p className="text-sm font-medium opacity-60">Investment Notifications</p>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between opacity-60">
             <div className="space-y-0.5">
               <Label htmlFor="investment-updates">Investment Updates</Label>
               <p className="text-sm text-muted-foreground">
@@ -679,12 +564,13 @@ function NotificationSettings() {
             </div>
             <Switch
               id="investment-updates"
-              checked={notifications.investmentUpdates}
-              onCheckedChange={(checked) => updateNotification('investmentUpdates', checked)}
+              checked={false}
+              disabled
+              className="opacity-100"
             />
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between opacity-60">
             <div className="space-y-0.5">
               <Label htmlFor="earnings-alerts">Earnings Alerts</Label>
               <p className="text-sm text-muted-foreground">
@@ -693,12 +579,13 @@ function NotificationSettings() {
             </div>
             <Switch
               id="earnings-alerts"
-              checked={notifications.earningsAlerts}
-              onCheckedChange={(checked) => updateNotification('earningsAlerts', checked)}
+              checked={false}
+              disabled
+              className="opacity-100"
             />
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between opacity-60">
             <div className="space-y-0.5">
               <Label htmlFor="pool-updates">Pool Updates</Label>
               <p className="text-sm text-muted-foreground">
@@ -707,8 +594,9 @@ function NotificationSettings() {
             </div>
             <Switch
               id="pool-updates"
-              checked={notifications.poolUpdates}
-              onCheckedChange={(checked) => updateNotification('poolUpdates', checked)}
+              checked={false}
+              disabled
+              className="opacity-100"
             />
           </div>
         </div>
@@ -716,9 +604,9 @@ function NotificationSettings() {
         <Separator />
 
         <div className="space-y-4">
-          <p className="text-sm font-medium">Other Notifications</p>
+          <p className="text-sm font-medium opacity-60">Other Notifications</p>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between opacity-60">
             <div className="space-y-0.5">
               <Label htmlFor="marketing">Marketing Emails</Label>
               <p className="text-sm text-muted-foreground">
@@ -727,41 +615,31 @@ function NotificationSettings() {
             </div>
             <Switch
               id="marketing"
-              checked={notifications.marketingEmails}
-              onCheckedChange={(checked) => updateNotification('marketingEmails', checked)}
+              checked={false}
+              disabled
+              className="opacity-100"
             />
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between opacity-60">
             <div className="space-y-0.5">
               <Label htmlFor="security-alerts">Security Alerts</Label>
               <p className="text-sm text-muted-foreground">
-                Important security and account notifications (always enabled)
+                Important security and account notifications
               </p>
             </div>
             <Switch
               id="security-alerts"
-              checked={notifications.securityAlerts}
+              checked={false}
               disabled
+              className="opacity-100"
             />
           </div>
         </div>
 
-        <div className="flex justify-end gap-2">
-          {hasChanges && (
-            <p className="text-sm text-muted-foreground self-center">
-              You have unsaved changes
-            </p>
-          )}
-          <Button onClick={savePreferences} disabled={saving || !hasChanges}>
-            {saving ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Save Preferences'
-            )}
+        <div className="flex justify-end">
+          <Button disabled className="opacity-60">
+            Save Preferences
           </Button>
         </div>
       </CardContent>
@@ -769,62 +647,6 @@ function NotificationSettings() {
   );
 }
 
-function SecuritySettings() {
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <Shield className="h-5 w-5" />
-          <CardTitle>Security Settings</CardTitle>
-        </div>
-        <CardDescription>Manage your account security and authentication</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <p className="text-sm font-medium">Connected Devices</p>
-              <p className="text-sm text-muted-foreground">
-                View and manage devices that have access to your account
-              </p>
-            </div>
-            <Button variant="outline">Manage Devices</Button>
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <p className="text-sm font-medium">Login History</p>
-              <p className="text-sm text-muted-foreground">
-                Review recent login activity on your account
-              </p>
-            </div>
-            <Button variant="outline">View History</Button>
-          </div>
-        </div>
-
-        <Separator />
-
-        <div className="space-y-4">
-          <p className="text-sm font-medium text-destructive">Danger Zone</p>
-
-          <div className="flex items-center justify-between rounded-lg border border-destructive/50 p-4">
-            <div className="space-y-0.5">
-              <p className="text-sm font-medium">Close Account</p>
-              <p className="text-sm text-muted-foreground">
-                Permanently delete your account and all associated data
-              </p>
-            </div>
-            <Button variant="destructive" size="sm">
-              Close Account
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 function WalletSettings() {
   const { address, isConnected, logout } = useWalletAuth();
@@ -861,13 +683,6 @@ function WalletSettings() {
       });
       setTimeout(() => setCopied(false), 2000);
     }
-  };
-
-  const exportTransactions = async () => {
-    toast({
-      title: 'Coming Soon',
-      description: 'Transaction export will be available soon',
-    });
   };
 
   if (!isConnected) {
@@ -948,13 +763,16 @@ function WalletSettings() {
 
         {/* Quick Actions */}
         <div className="space-y-4">
-          <p className="text-sm font-medium">Quick Actions</p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Quick Actions</p>
+            <Badge variant="secondary" className="text-xs">Coming Soon</Badge>
+          </div>
 
-          <div className="grid gap-2">
+          <div className="grid gap-2 opacity-50">
             <Button
               variant="outline"
               className="justify-start"
-              onClick={exportTransactions}
+              disabled
             >
               <Download className="mr-2 h-4 w-4" />
               Export Transaction History
@@ -962,15 +780,10 @@ function WalletSettings() {
             <Button
               variant="outline"
               className="justify-start"
-              asChild
+              disabled
             >
-              <a
-                href="/explore/portfolio"
-                className="inline-flex items-center"
-              >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                View All Transactions
-              </a>
+              <ExternalLink className="mr-2 h-4 w-4" />
+              View All Transactions
             </Button>
           </div>
         </div>

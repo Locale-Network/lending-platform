@@ -8,7 +8,7 @@ const connectionString = process.env.POSTGRES_URL_NON_POOLING || process.env.POS
 
 const pool = new Pool({
   connectionString,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : false,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
 const adapter = new PrismaPg(pool);
