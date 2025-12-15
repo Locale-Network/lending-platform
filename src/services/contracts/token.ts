@@ -4,10 +4,43 @@ import tokenAbi from '../contracts/UpgradeableCommunityToken.abi.json';
 
 import { Contract, JsonRpcProvider, Wallet } from 'ethers';
 
-const provider = new JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL as string);
-const signer = new Wallet(process.env.CARTESI_PRIVATE_KEY as string, provider);
+// Lazy initialization to avoid errors during build time when env vars may not be set
+let provider: JsonRpcProvider | null = null;
+let signer: Wallet | null = null;
+let tokenContract: Contract | null = null;
 
-const token = new Contract(process.env.TOKEN_ADDRESS as string, tokenAbi.abi, provider);
+function getProvider(): JsonRpcProvider {
+  if (!provider) {
+    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
+    if (!rpcUrl) {
+      throw new Error('NEXT_PUBLIC_RPC_URL environment variable is not set');
+    }
+    provider = new JsonRpcProvider(rpcUrl);
+  }
+  return provider;
+}
+
+function getSigner(): Wallet {
+  if (!signer) {
+    const privateKey = process.env.CARTESI_PRIVATE_KEY;
+    if (!privateKey) {
+      throw new Error('CARTESI_PRIVATE_KEY environment variable is not set');
+    }
+    signer = new Wallet(privateKey, getProvider());
+  }
+  return signer;
+}
+
+function getTokenContract(): Contract {
+  if (!tokenContract) {
+    const contractAddress = process.env.TOKEN_ADDRESS;
+    if (!contractAddress) {
+      throw new Error('TOKEN_ADDRESS environment variable is not set');
+    }
+    tokenContract = new Contract(contractAddress, tokenAbi.abi, getProvider());
+  }
+  return tokenContract;
+}
 
 // Minimal ERC20 ABI for token balance queries
 const erc20Abi = [
@@ -61,7 +94,7 @@ export const getStakingTokenAddress = async (): Promise<string> => {
     throw new Error('NEXT_PUBLIC_STAKING_POOL_ADDRESS not configured');
   }
 
-  const stakingPool = new Contract(stakingPoolAddress, stakingPoolAbi, provider);
+  const stakingPool = new Contract(stakingPoolAddress, stakingPoolAbi, getProvider());
   const tokenAddress: string = await stakingPool.stakingToken();
   cachedStakingTokenAddress = tokenAddress;
   return tokenAddress;
@@ -72,7 +105,7 @@ export const getStakingTokenAddress = async (): Promise<string> => {
  */
 export const getStakingTokenBalance = async (address: string): Promise<number> => {
   const stakingTokenAddress = await getStakingTokenAddress();
-  const stakingToken = new Contract(stakingTokenAddress, erc20Abi, provider);
+  const stakingToken = new Contract(stakingTokenAddress, erc20Abi, getProvider());
 
   const balance: bigint = await stakingToken.balanceOf(address);
   const decimals: number = await stakingToken.decimals();
@@ -85,30 +118,34 @@ export const getStakingTokenBalance = async (address: string): Promise<number> =
  */
 export const getStakingTokenSymbol = async (): Promise<string> => {
   const stakingTokenAddress = await getStakingTokenAddress();
-  const stakingToken = new Contract(stakingTokenAddress, erc20Abi, provider);
+  const stakingToken = new Contract(stakingTokenAddress, erc20Abi, getProvider());
 
   return await stakingToken.symbol();
 };
 
 export const rawBalanceOf = async (address: string): Promise<bigint> => {
-  const balance: bigint = await token.balanceOf(address);
+  const contract = getTokenContract();
+  const balance: bigint = await contract.balanceOf(address);
 
   return balance;
 };
 
 export const balanceOf = async (address: string): Promise<number> => {
-  const balance: bigint = await token.balanceOf(address);
-  const decimals = await token.decimals();
+  const contract = getTokenContract();
+  const balance: bigint = await contract.balanceOf(address);
+  const decimals = await contract.decimals();
 
   return Number(balance) / 10 ** Number(decimals);
 };
 
 export const getTokenSymbol = async (): Promise<string> => {
-  const symbol = await token.symbol();
+  const contract = getTokenContract();
+  const symbol = await contract.symbol();
   return symbol;
 };
 
 export const getTokenDecimals = async (): Promise<number> => {
-  const decimals = await token.decimals();
+  const contract = getTokenContract();
+  const decimals = await contract.decimals();
   return Number(decimals);
 };
