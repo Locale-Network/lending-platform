@@ -279,13 +279,19 @@ export async function POST(request: NextRequest) {
       isNewUser: true,
     });
   } catch (error) {
-    log.error({ err: error }, 'Auth sync error');
-
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const errorName = error instanceof Error ? error.name : 'Error';
+
+    log.error({
+      err: error,
+      errorName,
+      errorMessage,
+      stack: error instanceof Error ? error.stack : undefined
+    }, 'Auth sync error');
 
     // Check for specific Prisma errors
     if (errorName === 'PrismaClientKnownRequestError') {
-      const prismaError = error as { code?: string };
+      const prismaError = error as { code?: string; meta?: unknown };
 
       if (prismaError.code === 'P2002') {
         return NextResponse.json(
@@ -293,10 +299,19 @@ export async function POST(request: NextRequest) {
           { status: 409 }
         );
       }
+
+      // P2022: Column does not exist (schema mismatch)
+      if (prismaError.code === 'P2022') {
+        log.error({ meta: prismaError.meta }, 'Database schema mismatch - column missing');
+        return NextResponse.json(
+          { error: 'Database configuration error', details: 'Schema mismatch' },
+          { status: 500 }
+        );
+      }
     }
 
     return NextResponse.json(
-      { error: 'An unexpected error occurred' },
+      { error: 'An unexpected error occurred', details: errorMessage },
       { status: 500 }
     );
   }
