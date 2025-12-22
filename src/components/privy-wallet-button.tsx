@@ -39,6 +39,49 @@ function getAuthProvider(user: ReturnType<typeof usePrivy>['user']): 'email' | '
 }
 
 /**
+ * Extract email from Privy user object.
+ * Handles different auth providers (email, Google, Apple) which store email differently.
+ */
+function getEmailFromPrivyUser(user: ReturnType<typeof usePrivy>['user']): string | undefined {
+  if (!user) return undefined;
+
+  // Direct email login
+  if (user.email?.address) return user.email.address;
+
+  // Google OAuth - email is in user.google.email
+  if (user.google?.email) return user.google.email;
+
+  // Apple OAuth - email is in user.apple.email
+  if (user.apple?.email) return user.apple.email;
+
+  // Check linkedAccounts for any email account
+  const emailAccount = user.linkedAccounts?.find(
+    (account) => account.type === 'email' && 'address' in account
+  );
+  if (emailAccount && 'address' in emailAccount) {
+    return emailAccount.address as string;
+  }
+
+  // Check linkedAccounts for Google account
+  const googleAccount = user.linkedAccounts?.find(
+    (account) => account.type === 'google_oauth' && 'email' in account
+  );
+  if (googleAccount && 'email' in googleAccount) {
+    return googleAccount.email as string;
+  }
+
+  // Check linkedAccounts for Apple account
+  const appleAccount = user.linkedAccounts?.find(
+    (account) => account.type === 'apple_oauth' && 'email' in account
+  );
+  if (appleAccount && 'email' in appleAccount) {
+    return appleAccount.email as string;
+  }
+
+  return undefined;
+}
+
+/**
  * Get the wallet address that is actually LINKED to the current Privy user.
  *
  * IMPORTANT: We use user.linkedAccounts instead of useWallets() because:
@@ -68,6 +111,29 @@ function getLinkedWalletAddress(user: ReturnType<typeof usePrivy>['user']): stri
 
   // Otherwise use the first linked wallet
   return linkedWallets[0]?.address;
+}
+
+/**
+ * Clear all Privy-related session data from browser storage.
+ * Used when too many wallet conflicts occur to force a clean re-authentication.
+ */
+function clearPrivyStorageData() {
+  if (typeof window === 'undefined') return;
+
+  // Clear sessionStorage items related to Privy
+  sessionStorage.removeItem('privyAuthState');
+  Object.keys(sessionStorage).forEach(key => {
+    if (key.toLowerCase().includes('privy')) {
+      sessionStorage.removeItem(key);
+    }
+  });
+
+  // Clear localStorage items related to Privy
+  Object.keys(localStorage).forEach(key => {
+    if (key.toLowerCase().includes('privy')) {
+      localStorage.removeItem(key);
+    }
+  });
 }
 
 export default function PrivyWalletButton({
@@ -101,7 +167,7 @@ export default function PrivyWalletButton({
     syncingRef.current = true;
     setIsSyncing(true);
     try {
-      const email = user?.email?.address;
+      const email = getEmailFromPrivyUser(user);
       const privyUserId = user.id;
       const authProvider = getAuthProvider(user);
 
@@ -133,11 +199,21 @@ export default function PrivyWalletButton({
         const errorData = await response.json();
         console.error('[PrivyWallet] Sync failed:', errorData);
 
+        // Handle 429 with FORCE_REAUTH - too many conflicts, clear everything and force re-login
+        if (response.status === 429 && errorData.code === 'FORCE_REAUTH') {
+          console.error('[PrivyWallet] Force re-auth required - clearing all session data');
+          alert('Too many authentication conflicts detected. Please sign in again with a fresh session.');
+          clearPrivyStorageData();
+          await logout();
+          router.push('/signin');
+          return;
+        }
+
         // Handle 409 Conflict - account exists with different wallet
         if (response.status === 409) {
           console.error('[PrivyWallet] Wallet conflict detected:', errorData.message);
-          // Show user-friendly error - they should use their original wallet
-          alert(`This Privy account is already linked to a different wallet address (${errorData.existingAddress?.slice(0, 6)}...${errorData.existingAddress?.slice(-4)}). Please disconnect and connect with your original wallet.`);
+          const remaining = errorData.conflictsRemaining ?? 'unknown';
+          alert(`This wallet is already linked to a different account. Please sign out and use the correct account.\n\n(${remaining} attempts remaining before session reset)`);
           await logout();
         }
 
@@ -288,7 +364,6 @@ export default function PrivyWalletButton({
     return (
       <Button disabled className="gap-2">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Loading...
       </Button>
     );
   }
@@ -310,22 +385,23 @@ export default function PrivyWalletButton({
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-0 rounded-full bg-white hover:bg-gray-50 transition-colors cursor-pointer border border-gray-200 shadow-sm">
-            <div className="flex items-center gap-2 pl-2 pr-3 py-2">
-              <img src="/usdc-logo.png" alt="USDC" className="w-6 h-6 rounded-full" />
-              <span className="text-sm font-medium text-gray-900">
-                {balance.toFixed(3)} {tokenSymbol}
+          <button className="flex items-center gap-0 rounded-full bg-white hover:bg-gray-50 transition-all duration-200 cursor-pointer border border-gray-200 shadow-soft hover:shadow-md">
+            <div className="hidden md:flex items-center gap-2 pl-3 pr-3 py-2">
+              <img src="/usdc-logo.png" alt="USDC" className="w-5 h-5 rounded-full" />
+              <span className="text-sm font-semibold text-gray-900">
+                {balance.toFixed(2)} {tokenSymbol}
               </span>
             </div>
             <div className="flex items-center gap-2 bg-gray-100 rounded-full px-3 py-2 mr-0.5">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-sm font-mono text-gray-600">{shortenedAddress}</span>
             </div>
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>My Account</DropdownMenuLabel>
+        <DropdownMenuContent align="end" className="w-56 glass-subtle shadow-soft-lg border-border/50 animate-fade-in-up">
+          <DropdownMenuLabel className="text-xs text-muted-foreground">My Account</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="font-mono text-xs">{shortenedAddress}</DropdownMenuItem>
+          <DropdownMenuItem className="font-mono text-xs text-muted-foreground cursor-default">{shortenedAddress}</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {
@@ -333,7 +409,7 @@ export default function PrivyWalletButton({
               const path = authState?.role === 'BORROWER' ? '/borrower/account' : '/explore/portfolio';
               router.push(path);
             }}
-            className="cursor-pointer"
+            className="cursor-pointer transition-colors duration-150"
           >
             <Wallet className="mr-2 h-4 w-4" />
             {authState?.role === 'BORROWER' ? 'Account' : 'Portfolio'}
@@ -344,12 +420,13 @@ export default function PrivyWalletButton({
               const path = authState?.role === 'BORROWER' ? '/borrower/account' : '/explore/settings';
               router.push(path);
             }}
-            className="cursor-pointer"
+            className="cursor-pointer transition-colors duration-150"
           >
             <Settings className="mr-2 h-4 w-4" />
             Settings
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleDisconnect} className="text-destructive">
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={handleDisconnect} className="text-destructive focus:text-destructive focus:bg-destructive/10 transition-colors duration-150">
             <LogOut className="mr-2 h-4 w-4" />
             Disconnect
           </DropdownMenuItem>

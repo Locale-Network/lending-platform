@@ -1,5 +1,5 @@
 import 'server-only';
-import { createPublicClient, createWalletClient, http, encodeFunctionData, parseAbi, type Chain } from 'viem';
+import { createPublicClient, createWalletClient, http, encodeAbiParameters, parseAbi, getAddress, type Chain } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { arbitrum, arbitrumSepolia } from 'viem/chains';
 
@@ -44,22 +44,29 @@ export interface CartesiNotice {
   index: number;
   input: {
     index: number;
-    epoch: {
-      index: number;
-    };
   };
   payload: string; // Hex-encoded JSON
 }
 
 // zkFetch + Cartesi DSCR verification notice
+// Matches the response format from zkfetch.ts handler
 export interface DscrVerifiedNotice {
-  type: 'dscr_verified_zkfetch';
-  borrower_address: string;
+  action: 'verify_dscr_zkfetch';
+  success: boolean;
+  notice_type: 'dscr_verified';
   loan_id: string;
-  dscr_value: number;      // DSCR value scaled by 1000 (e.g., 1500 = 1.5)
-  interest_rate: number;   // Interest rate in basis points (e.g., 500 = 5%)
-  proof_hash: string;
-  timestamp: string;
+  borrower_address: string;
+  dscr_value: string;           // DSCR value as string (e.g., "1.7000")
+  monthly_noi: string;
+  monthly_debt_service: string;
+  meets_threshold: boolean;
+  target_dscr: number;
+  transaction_count: number;
+  zkfetch_proof_hash: string;   // The actual proof hash
+  proof_verified: boolean;
+  proof_error?: string;
+  verification_id: number;
+  calculated_at: number;
 }
 
 // SimpleLoanPool ABI for handleNotice
@@ -133,9 +140,6 @@ export async function fetchCartesiNotices(limit = 10): Promise<CartesiNotice[]> 
             index
             input {
               index
-              epoch {
-                index
-              }
             }
             payload
           }
@@ -179,15 +183,24 @@ export function parseNoticePayload(hexPayload: string): DscrVerifiedNotice | nul
     const jsonStr = Buffer.from(hex, 'hex').toString('utf8');
     const parsed = JSON.parse(jsonStr);
 
-    // Validate required fields for DSCR verification
-    if (!parsed.type || !parsed.borrower_address || !parsed.loan_id) {
-      console.error('[Relay] Invalid notice: missing required fields');
+    // Check action type FIRST - silently skip non-DSCR notices
+    if (!parsed.action || parsed.action !== 'verify_dscr_zkfetch') {
+      // Don't log for expected non-DSCR notices (create_loan, register_borrower, etc.)
       return null;
     }
 
-    // Only handle dscr_verified_zkfetch notices
-    if (parsed.type !== 'dscr_verified_zkfetch') {
-      console.log(`[Relay] Skipping non-DSCR notice type: ${parsed.type}`);
+    // Now validate required fields for DSCR verification only
+    if (!parsed.borrower_address || !parsed.loan_id) {
+      console.error('[Relay] Invalid DSCR notice: missing required fields', {
+        hasBorrower: !!parsed.borrower_address,
+        hasLoan: !!parsed.loan_id
+      });
+      return null;
+    }
+
+    // Only relay successful verifications
+    if (!parsed.success) {
+      console.log(`[Relay] Skipping failed DSCR verification for loan ${parsed.loan_id}`);
       return null;
     }
 
@@ -199,34 +212,87 @@ export function parseNoticePayload(hexPayload: string): DscrVerifiedNotice | nul
 }
 
 /**
+ * Convert a loan ID string to bytes32 format
+ * If already hex (0x...), pads to 32 bytes
+ * If UUID string, converts to hex then pads
+ */
+function loanIdToBytes32(loanId: string): `0x${string}` {
+  if (loanId.startsWith('0x')) {
+    // Already hex, pad to 32 bytes
+    const hex = loanId.slice(2).padEnd(64, '0');
+    return `0x${hex}` as `0x${string}`;
+  }
+  // Convert UUID string to hex
+  const hex = Buffer.from(loanId).toString('hex').padEnd(64, '0');
+  return `0x${hex}` as `0x${string}`;
+}
+
+/**
+ * Convert a proof hash string to bytes32 format
+ */
+function proofHashToBytes32(proofHash: string): `0x${string}` {
+  if (proofHash.startsWith('0x')) {
+    const hex = proofHash.slice(2).padEnd(64, '0');
+    return `0x${hex}` as `0x${string}`;
+  }
+  // Hash the string to get a consistent bytes32
+  const hex = Buffer.from(proofHash).toString('hex').padEnd(64, '0').slice(0, 64);
+  return `0x${hex}` as `0x${string}`;
+}
+
+/**
+ * Convert DSCR string value to uint256 (scaled by 1000)
+ * e.g., "1.7000" -> 1700, "2.5" -> 2500
+ */
+function dscrToUint256(dscrValue: string): bigint {
+  const num = parseFloat(dscrValue);
+  return BigInt(Math.round(num * 1000));
+}
+
+/**
+ * Calculate interest rate from DSCR (basis points)
+ * Higher DSCR = lower risk = lower rate
+ * Rates aligned with SBA loan standards (9-15% range)
+ */
+function calculateInterestRate(dscrValue: string): bigint {
+  const dscr = parseFloat(dscrValue);
+  // Rate tiers based on DSCR (in basis points) - SBA-aligned 9-15% range
+  if (dscr >= 2.0) return BigInt(900);    // 9% - excellent creditworthiness
+  if (dscr >= 1.5) return BigInt(1050);   // 10.5% - strong creditworthiness
+  if (dscr >= 1.25) return BigInt(1200);  // 12% - good creditworthiness
+  if (dscr >= 1.0) return BigInt(1350);   // 13.5% - acceptable creditworthiness
+  return BigInt(1500);                     // 15% - high risk
+}
+
+/**
  * Encode notice data for the smart contract
  * Encodes: bytes32 loanId, uint256 dscrValue, uint256 interestRate, bytes32 proofHash
  */
 export function encodeNoticeData(notice: DscrVerifiedNotice): `0x${string}` {
-  const loanId = notice.loan_id.startsWith('0x')
-    ? notice.loan_id
-    : `0x${notice.loan_id}`;
-  const proofHash = notice.proof_hash.startsWith('0x')
-    ? notice.proof_hash
-    : `0x${notice.proof_hash}`;
+  const loanIdBytes = loanIdToBytes32(notice.loan_id);
+  const proofHashBytes = proofHashToBytes32(notice.zkfetch_proof_hash);
+  const dscrValue = dscrToUint256(notice.dscr_value);
+  const interestRate = calculateInterestRate(notice.dscr_value);
 
-  return encodeFunctionData({
-    abi: parseAbi(['function encode(bytes32 loanId, uint256 dscrValue, uint256 interestRate, bytes32 proofHash)']),
-    functionName: 'encode',
-    args: [
-      loanId as `0x${string}`,
-      BigInt(notice.dscr_value),
-      BigInt(notice.interest_rate),
-      proofHash as `0x${string}`,
+  return encodeAbiParameters(
+    [
+      { type: 'bytes32', name: 'loanId' },
+      { type: 'uint256', name: 'dscrValue' },
+      { type: 'uint256', name: 'interestRate' },
+      { type: 'bytes32', name: 'proofHash' },
     ],
-  }).slice(10) as `0x${string}`; // Remove function selector
+    [loanIdBytes, dscrValue, interestRate, proofHashBytes]
+  ) as `0x${string}`;
 }
+
+// Notice type string that the contract expects
+const DSCR_VERIFIED_ZKFETCH_TYPE = 'dscr_verified_zkfetch';
 
 /**
  * Relay a single DSCR verification notice to the SimpleLoanPool contract
  */
 export async function relayNotice(notice: DscrVerifiedNotice): Promise<string | null> {
-  const noticeId = `${notice.type}-${notice.borrower_address}-${notice.loan_id}`;
+  const noticeId = `${notice.action}-${notice.borrower_address}-${notice.loan_id}-${notice.verification_id}`;
 
   // Skip if already processed
   if (processedNotices.has(noticeId)) {
@@ -237,13 +303,21 @@ export async function relayNotice(notice: DscrVerifiedNotice): Promise<string | 
   try {
     const { publicClient, walletClient, account } = createClients();
 
-    const borrowerAddress = notice.borrower_address.startsWith('0x')
+    // Normalize the borrower address with proper checksum
+    const rawAddress = notice.borrower_address.startsWith('0x')
       ? notice.borrower_address
       : `0x${notice.borrower_address}`;
+    const borrowerAddress = getAddress(rawAddress);
 
     const data = encodeNoticeData(notice);
 
-    console.log(`[Relay] Relaying DSCR notice: loanId=${notice.loan_id}, borrower=${borrowerAddress}, dscr=${notice.dscr_value}`);
+    console.log(`[Relay] Relaying DSCR notice:`, {
+      loanId: notice.loan_id,
+      borrower: borrowerAddress,
+      dscr: notice.dscr_value,
+      proofHash: notice.zkfetch_proof_hash,
+      verificationId: notice.verification_id,
+    });
 
     // Simulate the transaction first
     const { request } = await publicClient.simulateContract({
@@ -251,7 +325,7 @@ export async function relayNotice(notice: DscrVerifiedNotice): Promise<string | 
       address: SIMPLE_LOAN_POOL_ADDRESS,
       abi: SIMPLE_LOAN_POOL_ABI,
       functionName: 'handleNotice',
-      args: [notice.type, borrowerAddress as `0x${string}`, data],
+      args: [DSCR_VERIFIED_ZKFETCH_TYPE, borrowerAddress as `0x${string}`, data],
     });
 
     // Execute the transaction
@@ -261,7 +335,13 @@ export async function relayNotice(notice: DscrVerifiedNotice): Promise<string | 
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
     console.log(
-      `[Relay] DSCR notice relayed: txHash=${txHash}, status=${receipt.status}`
+      `[Relay] DSCR notice relayed successfully:`,
+      {
+        txHash,
+        status: receipt.status,
+        loanId: notice.loan_id,
+        blockNumber: receipt.blockNumber,
+      }
     );
 
     // Mark as processed
@@ -337,19 +417,55 @@ export async function startRelayService(pollIntervalMs = 30000): Promise<void> {
 export async function manualRelayDscr(
   borrowerAddress: string,
   loanId: string,
-  dscrValue: number,
-  interestRate: number,
+  dscrValue: string,
   proofHash: string
 ): Promise<string | null> {
   const notice: DscrVerifiedNotice = {
-    type: 'dscr_verified_zkfetch',
+    action: 'verify_dscr_zkfetch',
+    success: true,
+    notice_type: 'dscr_verified',
     borrower_address: borrowerAddress,
     loan_id: loanId,
     dscr_value: dscrValue,
-    interest_rate: interestRate,
-    proof_hash: proofHash,
-    timestamp: new Date().toISOString(),
+    monthly_noi: '0',
+    monthly_debt_service: '0',
+    meets_threshold: true,
+    target_dscr: 1.25,
+    transaction_count: 0,
+    zkfetch_proof_hash: proofHash,
+    proof_verified: true,
+    verification_id: Date.now(),
+    calculated_at: Date.now(),
   };
 
   return relayNotice(notice);
+}
+
+/**
+ * Fetch a specific notice from Cartesi by loan ID
+ */
+export async function fetchNoticeByLoanId(loanId: string): Promise<DscrVerifiedNotice | null> {
+  const notices = await fetchCartesiNotices(50);
+
+  for (const notice of notices) {
+    const parsed = parseNoticePayload(notice.payload);
+    if (parsed && parsed.loan_id === loanId) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get relay service status
+ */
+export function getRelayStatus() {
+  return {
+    processedCount: processedNotices.size,
+    cartesiGraphqlUrl: CARTESI_GRAPHQL_URL,
+    loanPoolAddress: SIMPLE_LOAN_POOL_ADDRESS,
+    chainId: CHAIN_ID,
+    rpcUrl: RPC_URL,
+  };
 }

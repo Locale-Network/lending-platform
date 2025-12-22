@@ -121,6 +121,22 @@ export const getAllLoanApplicationsOfBorrower = async (
   return result;
 };
 
+export const getDraftLoanApplicationsOfBorrower = async (
+  accountAddress: string
+): Promise<LoanApplication[]> => {
+  // Normalize address to lowercase for case-insensitive matching
+  const normalizedAddress = accountAddress.toLowerCase();
+
+  const result = await prisma.loanApplication.findMany({
+    where: {
+      accountAddress: normalizedAddress,
+      status: LoanApplicationStatus.DRAFT,
+    },
+    orderBy: [{ updatedAt: 'desc' }],
+  });
+  return result;
+};
+
 // Loan details from Step 2 of the application form
 export type LoanDetails = {
   requestedAmount: bigint;

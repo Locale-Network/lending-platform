@@ -138,14 +138,8 @@ async function getAccountByAddress(address: string): Promise<{ role: Role; email
     });
 
     if (!account) {
-      console.log('[getAccountByAddress] No account found for address:', normalizedAddress);
       return null;
     }
-
-    console.log('[getAccountByAddress] Found account:', {
-      address: account.address,
-      role: account.role,
-    });
 
     return {
       role: account.role,
@@ -182,11 +176,6 @@ export async function getSession(): Promise<PrivySession | null> {
     }
 
     const account = await getAccountByAddress(privyUser.address);
-    console.log('[getSession] Account lookup result:', {
-      address: privyUser.address,
-      accountFound: !!account,
-      role: account?.role || 'NOT_FOUND (defaulting to INVESTOR)',
-    });
 
     return {
       address: privyUser.address,

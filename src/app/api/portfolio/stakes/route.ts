@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isValidEthereumAddress } from '@/lib/validation';
 
 /**
  * Get user's staking portfolio from the blockchain via Alchemy
@@ -15,6 +16,14 @@ export async function GET(request: NextRequest) {
     if (!userAddress) {
       return NextResponse.json(
         { error: 'Address parameter is required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate Ethereum address format
+    if (!isValidEthereumAddress(userAddress)) {
+      return NextResponse.json(
+        { error: 'Invalid Ethereum address format' },
         { status: 400 }
       );
     }

@@ -1,6 +1,8 @@
 'use server';
 
-import { getSubmittedLoanApplicationsOfBorrower as dbGetSubmittedLoanApplicationsOfBorrower } from '@/services/db/loan-applications/borrower';
+import {
+  getAllLoanApplicationsOfBorrower as dbGetAllLoanApplicationsOfBorrower,
+} from '@/services/db/loan-applications/borrower';
 import { validateRequest as validateBorrowerRequest } from '@/app/borrower/actions';
 import { LoanApplicationsForTable } from './columns';
 
@@ -9,12 +11,18 @@ interface GetLoanApplicationsResponse {
   errorMessage?: string;
   loanApplications?: LoanApplicationsForTable[];
 }
+
+/**
+ * Get all loan applications for a borrower (including drafts)
+ * Drafts will now show in the main table with DRAFT status
+ */
 export const getLoanApplications = async (
   accountAddress: string
 ): Promise<GetLoanApplicationsResponse> => {
   try {
     await validateBorrowerRequest(accountAddress);
-    const loans = await dbGetSubmittedLoanApplicationsOfBorrower(accountAddress);
+    // Get ALL loan applications including drafts
+    const loans = await dbGetAllLoanApplicationsOfBorrower(accountAddress);
 
     const loansForTable: LoanApplicationsForTable[] = loans.map(loan => ({
       id: loan.id,

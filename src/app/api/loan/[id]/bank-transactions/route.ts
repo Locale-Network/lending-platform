@@ -16,7 +16,13 @@ export async function GET(
   try {
     const { id } = await params;
 
-    // Get loan application with Plaid access token
+    // Pagination parameters
+    const searchParams = request.nextUrl.searchParams;
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const perPage = Math.min(parseInt(searchParams.get('perPage') || '10', 10), 50); // Max 50, default 10
+    const skip = (page - 1) * perPage;
+
+    // Get loan application with Plaid access token (check both direct field and related table)
     const loanApplication = await prisma.loanApplication.findUnique({
       where: { id },
       select: {
@@ -24,6 +30,27 @@ export async function GET(
         plaidAccessToken: true,
         plaidTransactionsCursor: true,
         accountAddress: true,
+        // Also get tokens from the plaid_item_access_tokens table
+        plaidItemAccessToken: {
+          select: {
+            accessToken: true,
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+          take: 1,
+        },
+        // Get stored transactions from DB with pagination
+        transactions: {
+          where: { isDeleted: false },
+          orderBy: { date: 'desc' },
+          skip,
+          take: perPage,
+        },
+        // Count total transactions for pagination
+        _count: {
+          select: { transactions: { where: { isDeleted: false } } },
+        },
       },
     });
 
@@ -34,7 +61,78 @@ export async function GET(
       );
     }
 
-    if (!loanApplication.plaidAccessToken) {
+    // Check both the direct field and the related table for access token
+    const accessToken = loanApplication.plaidAccessToken ||
+      loanApplication.plaidItemAccessToken?.[0]?.accessToken;
+
+    // If we have stored transactions, return those first
+    const totalTransactionCount = loanApplication._count?.transactions || 0;
+
+    if (loanApplication.transactions && loanApplication.transactions.length > 0) {
+      // Fetch all transactions for summary calculation (without pagination)
+      const allTransactions = await prisma.transaction.findMany({
+        where: { loanApplicationId: id, isDeleted: false },
+        select: { amount: true, merchant: true },
+      });
+
+      // Calculate summary statistics from ALL transactions
+      // In Plaid: negative amounts = income, positive = expenses
+      const totalIncome = allTransactions
+        .filter(tx => (tx.amount || 0) < 0)
+        .reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
+
+      const totalExpenses = allTransactions
+        .filter(tx => (tx.amount || 0) > 0)
+        .reduce((sum, tx) => sum + (tx.amount || 0), 0);
+
+      const categoryBreakdown = allTransactions.reduce((acc, tx) => {
+        // Use merchant as category since we don't have a category field
+        const cat = tx.merchant || 'Other';
+        if (!acc[cat]) {
+          acc[cat] = { count: 0, total: 0 };
+        }
+        acc[cat].count++;
+        acc[cat].total += tx.amount || 0;
+        return acc;
+      }, {} as Record<string, { count: number; total: number }>);
+
+      // Calculate pagination info
+      const totalPages = Math.ceil(totalTransactionCount / perPage);
+      const hasNextPage = page < totalPages;
+      const hasPrevPage = page > 1;
+
+      return NextResponse.json({
+        transactions: loanApplication.transactions.map(tx => ({
+          id: tx.transactionId || String(tx.id),
+          transaction_id: tx.transactionId || String(tx.id),
+          name: tx.merchant || 'Unknown',
+          merchant: tx.merchant,
+          amount: tx.amount,
+          date: tx.date?.toISOString().split('T')[0],
+          category: tx.merchant || 'Other',
+          pending: false,
+          type: (tx.amount || 0) < 0 ? 'income' : 'expense',
+        })),
+        summary: {
+          totalTransactions: totalTransactionCount,
+          totalIncome: Math.round(totalIncome * 100) / 100,
+          totalExpenses: Math.round(totalExpenses * 100) / 100,
+          netCashFlow: Math.round((totalIncome - totalExpenses) * 100) / 100,
+          categoryBreakdown,
+          source: 'database',
+        },
+        pagination: {
+          page,
+          perPage,
+          totalPages,
+          totalItems: totalTransactionCount,
+          hasNextPage,
+          hasPrevPage,
+        },
+      });
+    }
+
+    if (!accessToken) {
       return NextResponse.json(
         {
           transactions: [],
@@ -52,7 +150,7 @@ export async function GET(
 
     while (hasMore && maxIterations > 0) {
       const requestPayload: TransactionsSyncRequest = {
-        access_token: loanApplication.plaidAccessToken,
+        access_token: accessToken,
         cursor,
         count: 100,
       };

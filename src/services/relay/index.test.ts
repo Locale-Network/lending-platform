@@ -148,11 +148,11 @@ describe('relay/index', () => {
       const parsed = parseNoticePayload(payload);
 
       expect(parsed).not.toBeNull();
-      expect(parsed?.type).toBe('dscr_verified_zkfetch');
+      expect(parsed?.action).toBe('verify_dscr_zkfetch');
       expect(parsed?.borrower_address).toBeDefined();
       expect(parsed?.loan_id).toBeDefined();
       expect(parsed?.dscr_value).toBeDefined();
-      expect(parsed?.interest_rate).toBeDefined();
+      expect(parsed?.zkfetch_proof_hash).toBeDefined();
     });
 
     it('should return null for non-dscr notice types', () => {
@@ -173,7 +173,7 @@ describe('relay/index', () => {
 
     it('should return null for missing required fields', () => {
       const incompletePayload = '0x' + Buffer.from(JSON.stringify({
-        type: 'dscr_verified_zkfetch',
+        action: 'verify_dscr_zkfetch',
         // Missing borrower_address and loan_id
       })).toString('hex');
 
@@ -188,20 +188,28 @@ describe('relay/index', () => {
       const parsed = parseNoticePayload(payloadWithoutPrefix);
 
       expect(parsed).not.toBeNull();
-      expect(parsed?.type).toBe('dscr_verified_zkfetch');
+      expect(parsed?.action).toBe('verify_dscr_zkfetch');
     });
   });
 
   describe('encodeNoticeData', () => {
     it('should encode notice data for smart contract', () => {
       const notice: DscrVerifiedNotice = {
-        type: 'dscr_verified_zkfetch',
+        action: 'verify_dscr_zkfetch',
+        success: true,
+        notice_type: 'dscr_verified',
         borrower_address: '0x1234567890123456789012345678901234567890',
         loan_id: '0x1234567890123456789012345678901234567890123456789012345678901234',
-        dscr_value: 15000, // 1.5 DSCR
-        interest_rate: 850, // 8.5%
-        proof_hash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-        timestamp: new Date().toISOString(),
+        dscr_value: '1.5000',
+        monthly_noi: '8500.00',
+        monthly_debt_service: '5666.67',
+        meets_threshold: true,
+        target_dscr: 1.25,
+        transaction_count: 42,
+        zkfetch_proof_hash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+        proof_verified: true,
+        verification_id: 1,
+        calculated_at: Math.floor(Date.now() / 1000),
       };
 
       const encoded = encodeNoticeData(notice);
@@ -211,15 +219,23 @@ describe('relay/index', () => {
       expect(encoded.length).toBeGreaterThan(10);
     });
 
-    it('should handle loan_id without 0x prefix', () => {
+    it('should handle short loan_id format', () => {
       const notice: DscrVerifiedNotice = {
-        type: 'dscr_verified_zkfetch',
+        action: 'verify_dscr_zkfetch',
+        success: true,
+        notice_type: 'dscr_verified',
         borrower_address: '0x1234567890123456789012345678901234567890',
-        loan_id: '1234567890123456789012345678901234567890123456789012345678901234',
-        dscr_value: 15000,
-        interest_rate: 850,
-        proof_hash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-        timestamp: new Date().toISOString(),
+        loan_id: 'loan-12345', // Short string format (will be padded to bytes32)
+        dscr_value: '1.5000',
+        monthly_noi: '8500.00',
+        monthly_debt_service: '5666.67',
+        meets_threshold: true,
+        target_dscr: 1.25,
+        transaction_count: 42,
+        zkfetch_proof_hash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+        proof_verified: true,
+        verification_id: 1,
+        calculated_at: Math.floor(Date.now() / 1000),
       };
 
       const encoded = encodeNoticeData(notice);
@@ -228,15 +244,23 @@ describe('relay/index', () => {
       expect(encoded.length).toBeGreaterThan(10);
     });
 
-    it('should handle proof_hash without 0x prefix', () => {
+    it('should handle zkfetch_proof_hash without 0x prefix', () => {
       const notice: DscrVerifiedNotice = {
-        type: 'dscr_verified_zkfetch',
+        action: 'verify_dscr_zkfetch',
+        success: true,
+        notice_type: 'dscr_verified',
         borrower_address: '0x1234567890123456789012345678901234567890',
         loan_id: '0x1234567890123456789012345678901234567890123456789012345678901234',
-        dscr_value: 15000,
-        interest_rate: 850,
-        proof_hash: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-        timestamp: new Date().toISOString(),
+        dscr_value: '1.5000',
+        monthly_noi: '8500.00',
+        monthly_debt_service: '5666.67',
+        meets_threshold: true,
+        target_dscr: 1.25,
+        transaction_count: 42,
+        zkfetch_proof_hash: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+        proof_verified: true,
+        verification_id: 1,
+        calculated_at: Math.floor(Date.now() / 1000),
       };
 
       const encoded = encodeNoticeData(notice);
@@ -253,13 +277,21 @@ describe('relay/index', () => {
 
   describe('relayNotice', () => {
     const validNotice: DscrVerifiedNotice = {
-      type: 'dscr_verified_zkfetch',
+      action: 'verify_dscr_zkfetch',
+      success: true,
+      notice_type: 'dscr_verified',
       borrower_address: '0x1234567890123456789012345678901234567890',
       loan_id: '0x1234567890123456789012345678901234567890123456789012345678901234',
-      dscr_value: 15000,
-      interest_rate: 850,
-      proof_hash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-      timestamp: new Date().toISOString(),
+      dscr_value: '1.5000',
+      monthly_noi: '8500.00',
+      monthly_debt_service: '5666.67',
+      meets_threshold: true,
+      target_dscr: 1.25,
+      transaction_count: 42,
+      zkfetch_proof_hash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+      proof_verified: true,
+      verification_id: 1,
+      calculated_at: Math.floor(Date.now() / 1000),
     };
 
     it('should return null when called without proper viem setup (unit test limitation)', async () => {

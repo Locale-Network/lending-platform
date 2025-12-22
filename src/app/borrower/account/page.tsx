@@ -3,6 +3,7 @@ import {
   getIdentityVerificationStatus,
   createLinkTokenForIdentityVerification,
   retryIdentityVerification,
+  getBorrowerNFTTokenId,
 } from './actions';
 import CompleteIdentityVerification from './complete-identity-verification';
 import RetryIdentityVerification from './retry-identity-verification';
@@ -62,10 +63,15 @@ export default async function Page() {
   }
 
   if (hasAttemptedKyc && identityVerificationData.status === KYCVerificationStatus.success) {
+    const { tokenId } = await getBorrowerNFTTokenId(accountAddress);
+    const borrowerCredentialAddress = process.env.BORROWER_CREDENTIAL_ADDRESS;
+
     return (
       <SuccessIdentityVerification
         accountAddress={accountAddress}
         identityVerificationData={identityVerificationData}
+        borrowerNFTTokenId={tokenId}
+        borrowerCredentialAddress={borrowerCredentialAddress}
       />
     );
   }

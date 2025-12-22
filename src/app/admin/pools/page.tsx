@@ -1,10 +1,27 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, TrendingUp, Wallet, Users, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import {
+  Plus,
+  TrendingUp,
+  Wallet,
+  Users,
+  FileText,
+  ChevronDown,
+  ChevronUp,
+  Building2,
+  CheckCircle,
+  Clock,
+  XCircle,
+  AlertCircle,
+  Sparkles,
+} from 'lucide-react';
 import Link from 'next/link';
 import useSWR from 'swr';
+import LoadingDots from '@/components/ui/loading-dots';
 
 const fetcher = async (url: string) => {
   const res = await fetch(url);
@@ -15,7 +32,7 @@ const fetcher = async (url: string) => {
   return res.json();
 };
 
-const statusColors = {
+const poolStatusColors: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-800',
   PENDING: 'bg-yellow-100 text-yellow-800',
   ACTIVE: 'bg-green-100 text-green-800',
@@ -23,7 +40,40 @@ const statusColors = {
   CLOSED: 'bg-red-100 text-red-800',
 };
 
+const loanStatusColors: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-800',
+  PENDING: 'bg-yellow-100 text-yellow-800',
+  SUBMITTED: 'bg-blue-100 text-blue-800',
+  ADDITIONAL_INFO_NEEDED: 'bg-orange-100 text-orange-800',
+  APPROVED: 'bg-green-100 text-green-800',
+  DISBURSED: 'bg-emerald-100 text-emerald-800',
+  ACTIVE: 'bg-teal-100 text-teal-800',
+  REPAID: 'bg-purple-100 text-purple-800',
+  REJECTED: 'bg-red-100 text-red-800',
+  DEFAULTED: 'bg-red-200 text-red-900',
+};
+
+const LoanStatusIcon = ({ status }: { status: string }) => {
+  switch (status) {
+    case 'APPROVED':
+    case 'DISBURSED':
+    case 'ACTIVE':
+    case 'REPAID':
+      return <CheckCircle className="h-3 w-3 text-green-600" />;
+    case 'REJECTED':
+    case 'DEFAULTED':
+      return <XCircle className="h-3 w-3 text-red-600" />;
+    case 'PENDING':
+    case 'SUBMITTED':
+    case 'ADDITIONAL_INFO_NEEDED':
+      return <Clock className="h-3 w-3 text-yellow-600" />;
+    default:
+      return <AlertCircle className="h-3 w-3 text-gray-400" />;
+  }
+};
+
 export default function AdminPoolsPage() {
+  const [expandedPool, setExpandedPool] = useState<string | null>(null);
   const { data: pools, error: poolsError, isLoading: poolsLoading } = useSWR('/api/pools', fetcher);
   const { data: stats, error: statsError, isLoading: statsLoading } = useSWR(
     '/api/pools/stats',
@@ -54,7 +104,7 @@ export default function AdminPoolsPage() {
       {/* Loading State */}
       {isLoading && (
         <div className="flex items-center justify-center p-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <LoadingDots size="md" />
         </div>
       )}
 
@@ -131,59 +181,150 @@ export default function AdminPoolsPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-4">
               {pools.map((pool: any) => (
-            <Card key={pool.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-lg">{pool.name}</CardTitle>
-                    <CardDescription className="mt-1">{pool.poolType.replace('_', ' ')}</CardDescription>
-                  </div>
-                  <span
-                    className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[pool.status as keyof typeof statusColors]}`}
+                <Card key={pool.id} className="hover:shadow-lg transition-shadow overflow-hidden">
+                  {/* Pool Header - Clickable to expand */}
+                  <div
+                    className="cursor-pointer"
+                    onClick={() => setExpandedPool(expandedPool === pool.id ? null : pool.id)}
                   >
-                    {pool.status}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">TVL</p>
-                    <p className="font-semibold">{(pool.totalStaked ?? 0).toLocaleString()} USDC</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">APY</p>
-                    <p className="font-semibold">
-                      {pool.annualizedReturn ? `${pool.annualizedReturn}%` : 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Investors</p>
-                    <p className="font-semibold">{pool.totalInvestors ?? 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Available</p>
-                    <p className="font-semibold">{(pool.availableLiquidity ?? 0).toLocaleString()} USDC</p>
-                  </div>
-                </div>
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <CardTitle className="text-lg">{pool.name}</CardTitle>
+                            <Badge className={poolStatusColors[pool.status as keyof typeof poolStatusColors]}>
+                              {pool.status}
+                            </Badge>
+                            {pool.isComingSoon && pool.status === 'DRAFT' && (
+                              <Badge className="bg-purple-100 text-purple-800 flex items-center gap-1">
+                                <Sparkles className="h-3 w-3" />
+                                Public Preview
+                              </Badge>
+                            )}
+                          </div>
+                          <CardDescription className="mt-1">{pool.poolType.replace('_', ' ')}</CardDescription>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-right text-sm mr-4">
+                            <p className="text-muted-foreground">Loans in Pool</p>
+                            <p className="font-semibold">{pool.loans?.length || 0}</p>
+                          </div>
+                          {expandedPool === pool.id ? (
+                            <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <p className="text-muted-foreground">TVL</p>
+                          <p className="font-semibold">{(pool.totalStaked ?? 0).toLocaleString()} USDC</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">APY</p>
+                          <p className="font-semibold">
+                            {pool.annualizedReturn ? `${pool.annualizedReturn}%` : 'N/A'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Investors</p>
+                          <p className="font-semibold">{pool.totalInvestors ?? 0}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Available</p>
+                          <p className="font-semibold">{(pool.availableLiquidity ?? 0).toLocaleString()} USDC</p>
+                        </div>
+                      </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <Link href={`/admin/pools/${pool.id}`}>
-                    <Button variant="outline" className="w-full">
-                      Manage
-                    </Button>
-                  </Link>
-                  <Link href={`/explore/pools/${pool.slug}`}>
-                    <Button variant="ghost" className="w-full">
-                      View
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                      <div className="grid grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
+                        <Link href={`/admin/pools/${pool.id}`}>
+                          <Button variant="outline" className="w-full">
+                            Manage
+                          </Button>
+                        </Link>
+                        <Link href={`/explore/pools/${pool.slug}`}>
+                          <Button variant="ghost" className="w-full">
+                            View
+                          </Button>
+                        </Link>
+                      </div>
+                    </CardContent>
+                  </div>
+
+                  {/* Expanded Loans Section */}
+                  {expandedPool === pool.id && (
+                    <div className="border-t bg-muted/30 p-4">
+                      <h4 className="font-semibold mb-3 flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        Loans in this Pool ({pool.loans?.length || 0})
+                      </h4>
+                      {!pool.loans || pool.loans.length === 0 ? (
+                        <p className="text-sm text-muted-foreground py-4 text-center">
+                          No loans assigned to this pool yet
+                        </p>
+                      ) : (
+                        <div className="space-y-3">
+                          {pool.loans.map((poolLoan: any) => (
+                            <div
+                              key={poolLoan.id}
+                              className="bg-background border rounded-lg p-4 space-y-2"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                                  <span className="font-medium">
+                                    {poolLoan.loanApplication?.businessLegalName || 'Unknown Business'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <LoanStatusIcon status={poolLoan.loanApplication?.status || 'DRAFT'} />
+                                  <Badge className={loanStatusColors[poolLoan.loanApplication?.status || 'DRAFT']}>
+                                    {poolLoan.loanApplication?.status || 'Unknown'}
+                                  </Badge>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <div>
+                                  <p className="text-muted-foreground">Principal</p>
+                                  <p className="font-semibold">{poolLoan.principal?.toLocaleString() || 0} USDC</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Interest Rate</p>
+                                  <p className="font-semibold">{poolLoan.interestRate?.toFixed(2) || 'N/A'}%</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Term</p>
+                                  <p className="font-semibold">{poolLoan.termMonths || 'N/A'} months</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Expected Return</p>
+                                  <p className="font-semibold text-green-600">
+                                    {poolLoan.expectedReturn?.toLocaleString() || 0} USDC
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between pt-2 text-xs text-muted-foreground">
+                                <span>
+                                  Funded: {new Date(poolLoan.fundedAt).toLocaleDateString()}
+                                </span>
+                                <span className="font-mono">
+                                  Borrower: {poolLoan.loanApplication?.accountAddress?.slice(0, 6)}...
+                                  {poolLoan.loanApplication?.accountAddress?.slice(-4)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              ))}
             </div>
           )}
         </div>

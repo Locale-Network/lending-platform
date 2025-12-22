@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runIndexer } from '@/services/contracts/stakingPoolIndexer';
+import { validateCronSecret } from '@/lib/rate-limit';
+import { cronLogger } from '@/lib/logger';
+
+const log = cronLogger.child({ job: 'index-staking-events' });
 
 /**
  * POST /api/cron/index-staking-events
@@ -17,11 +21,8 @@ import { runIndexer } from '@/services/contracts/stakingPoolIndexer';
  */
 export async function POST(request: NextRequest) {
   try {
-    // Verify cron secret for security
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    // Use standardized cron validation (CRON_SECRET is now required)
+    if (!validateCronSecret(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -34,9 +35,9 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Indexer cron error:', error);
+    log.error({ err: error }, 'Indexer cron error');
     return NextResponse.json(
-      { error: 'Failed to run indexer', details: String(error) },
+      { error: 'Failed to run indexer' },
       { status: 500 }
     );
   }

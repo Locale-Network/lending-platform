@@ -6,7 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, DollarSign, PieChart, Activity, Wallet, ArrowUpRight, ArrowDownLeft, Clock, ExternalLink, RefreshCw, Plus, ArrowRight, Settings } from 'lucide-react';
+import { TrendingUp, DollarSign, PieChart, Activity, Wallet, ArrowUpRight, ArrowDownLeft, Clock, ExternalLink, RefreshCw, Plus, ArrowRight, Settings, Loader2 } from 'lucide-react';
+import { HoldToConfirmButton } from '@/components/ui/hold-to-confirm-button';
+import { StatusIndicator } from '@/components/ui/status-indicator';
+import { Progress } from '@/components/ui/progress';
 import { ApplyFundingButton } from '@/components/ui/apply-funding-button';
 import { PortfolioAllocationChart } from '@/components/portfolio/portfolio-allocation-chart';
 import { PortfolioPerformanceChart } from '@/components/portfolio/portfolio-performance-chart';
@@ -210,7 +213,7 @@ export default function PortfolioPage() {
   return (
     <div className="container mx-auto py-8 space-y-8">
       {/* Header with refresh and live indicator */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between animate-fade-in-up">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">My Portfolio</h1>
           <p className="text-muted-foreground">Track your investments, earnings, and transactions</p>
@@ -229,48 +232,58 @@ export default function PortfolioPage() {
       </div>
 
       {/* Portfolio Stats */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 animate-fade-in-stagger">
+        <Card variant="elevated" className="bg-gradient-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Invested</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <div className="p-2 rounded-full bg-blue-500/10">
+              <DollarSign className="h-4 w-4 text-blue-500" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summary.totalInvested.toLocaleString()} USDC</div>
-            <p className="text-xs text-muted-foreground">Across {summary.activeInvestments} pools</p>
+            <div className="text-3xl font-bold tracking-tight">{summary.totalInvested.toLocaleString()} <span className="text-lg font-medium text-muted-foreground">USDC</span></div>
+            <p className="text-xs text-muted-foreground mt-1">Across {summary.activeInvestments} pools</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card variant="elevated" className="bg-gradient-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Portfolio Value</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <div className="p-2 rounded-full bg-primary/10">
+              <TrendingUp className="h-4 w-4 text-primary" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summary.totalValue.toLocaleString()} USDC</div>
-            <p className="text-xs text-green-600">+{gainPercentage}%</p>
+            <div className="text-3xl font-bold tracking-tight">{summary.totalValue.toLocaleString()} <span className="text-lg font-medium text-muted-foreground">USDC</span></div>
+            <p className={`text-xs mt-1 ${Number(gainPercentage) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {Number(gainPercentage) >= 0 ? '+' : ''}{gainPercentage}% all time
+            </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card variant="elevated" className="bg-gradient-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Earnings</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
+            <div className="p-2 rounded-full bg-green-500/10">
+              <Activity className="h-4 w-4 text-green-500" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{summary.totalRewards.toLocaleString()} USDC</div>
-            <p className="text-xs text-muted-foreground">Lifetime earnings</p>
+            <div className="text-3xl font-bold tracking-tight text-green-600">+{summary.totalRewards.toLocaleString()} <span className="text-lg font-medium">USDC</span></div>
+            <p className="text-xs text-muted-foreground mt-1">Lifetime earnings</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card variant="elevated" className="bg-gradient-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Avg Return</CardTitle>
-            <PieChart className="h-4 w-4 text-muted-foreground" />
+            <div className="p-2 rounded-full bg-purple-500/10">
+              <PieChart className="h-4 w-4 text-purple-500" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summary.avgReturn}%</div>
-            <p className="text-xs text-muted-foreground">Annual percentage</p>
+            <div className="text-3xl font-bold tracking-tight">{summary.avgReturn}<span className="text-lg font-medium text-muted-foreground">%</span></div>
+            <p className="text-xs text-muted-foreground mt-1">Annual percentage</p>
           </CardContent>
         </Card>
       </div>
@@ -284,7 +297,7 @@ export default function PortfolioPage() {
       )}
 
       {/* Quick Actions */}
-      <Card>
+      <Card variant="elevated" className="animate-fade-in-up">
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
           <CardDescription>Manage your investments</CardDescription>
@@ -477,14 +490,17 @@ export default function PortfolioPage() {
                 {transactionStats.pendingUnstakeAmount > 0 &&
                   transactionStats.canWithdrawAt &&
                   transactionStats.canWithdrawAt <= new Date() && (
-                    <Button
-                      size="sm"
-                      onClick={handleCompleteUnstake}
+                    <HoldToConfirmButton
+                      onConfirm={handleCompleteUnstake}
+                      duration={2000}
                       disabled={isCompletingUnstake}
+                      loading={isCompletingUnstake}
+                      variant="success"
+                      size="sm"
                       className="w-full"
                     >
-                      {isCompletingUnstake ? 'Withdrawing...' : 'Complete Withdrawal'}
-                    </Button>
+                      Hold to Withdraw
+                    </HoldToConfirmButton>
                   )}
               </CardContent>
             </Card>

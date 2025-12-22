@@ -2,20 +2,36 @@ import { NextRequest, NextResponse } from 'next/server';
 import { syncTransactionsForAllLoans } from '@/services/plaid/transactionSync';
 import { triggerDSCRCalculation } from '@/services/dscr/calculator';
 import { checkRateLimit, getClientIp, rateLimits, rateLimitHeaders, validateCronSecret } from '@/lib/rate-limit';
+import { cronLogger } from '@/lib/logger';
+
+const log = cronLogger.child({ job: 'sync-transactions' });
 
 /**
- * Daily Transaction Sync Cron Job
+ * Scheduled Transaction Sync Cron Job
  *
- * This endpoint should be called once daily (e.g., via Vercel Cron or external scheduler)
- * to fetch new transactions from Plaid for all active loans and trigger DSCR recalculation.
+ * Runs every 12 hours by default (configurable via vercel.json).
+ * Fetches new transactions from Plaid for active loans and triggers DSCR recalculation.
+ *
+ * Configuration via Environment Variables:
+ * - DAILY_SYNC_ENABLED: Set to 'false' to disable sync entirely
+ * - SYNC_ALL_ACTIVE_LOANS: Set to 'false' to only sync loans with recent activity (default: true)
+ * - SYNC_RECENT_ACTIVITY_DAYS: Days to consider as "recent" (default: 30)
  *
  * Flow:
- * 1. Fetch all active loans from database
+ * 1. Fetch active loans from database (filtered by config)
  * 2. For each loan, sync latest transactions from Plaid
  * 3. Store transactions in PostgreSQL
  * 4. Trigger DSCR calculation and Cartesi submission
  * 5. Return summary of sync results
  */
+
+// Configuration from environment variables
+const getSyncConfig = () => ({
+  enabled: process.env.DAILY_SYNC_ENABLED !== 'false',
+  syncAllActiveLoans: process.env.SYNC_ALL_ACTIVE_LOANS !== 'false',
+  recentActivityDays: parseInt(process.env.SYNC_RECENT_ACTIVITY_DAYS || '30', 10),
+});
+
 export async function GET(req: NextRequest) {
   // Verify cron secret for security
   if (!validateCronSecret(req)) {
@@ -33,42 +49,48 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Check if daily sync is enabled
-  const syncEnabled = process.env.DAILY_SYNC_ENABLED !== 'false';
-  if (!syncEnabled) {
-    console.log('[Transaction Sync] Daily sync is disabled via environment variable');
+  // Get sync configuration
+  const config = getSyncConfig();
+
+  // Check if sync is enabled
+  if (!config.enabled) {
+    log.info('Scheduled sync is disabled via environment variable');
     return NextResponse.json({
       success: true,
-      message: 'Daily sync is disabled',
+      message: 'Scheduled sync is disabled',
+      config,
       synced: 0
     });
   }
 
-  console.log('[Transaction Sync] Starting daily transaction sync...');
+  log.info({
+    syncAllActiveLoans: config.syncAllActiveLoans,
+    recentActivityDays: config.recentActivityDays,
+  }, 'Starting scheduled transaction sync');
   const startTime = Date.now();
 
   try {
     // Sync transactions for all active loans
     const syncResults = await syncTransactionsForAllLoans();
 
-    console.log('[Transaction Sync] Sync completed:', {
+    log.info({
       totalLoans: syncResults.totalLoans,
       successful: syncResults.successful,
       failed: syncResults.failed,
       transactionsSynced: syncResults.transactionsSynced,
       durationMs: Date.now() - startTime
-    });
+    }, 'Sync completed');
 
     // Trigger DSCR calculation for loans with new transactions
     if (syncResults.loansWithNewTransactions.length > 0) {
-      console.log('[Transaction Sync] Triggering DSCR calculations for', syncResults.loansWithNewTransactions.length, 'loans');
+      log.info({ count: syncResults.loansWithNewTransactions.length }, 'Triggering DSCR calculations');
 
       const dscrResults = await triggerDSCRCalculation(syncResults.loansWithNewTransactions);
 
-      console.log('[Transaction Sync] DSCR calculations triggered:', {
+      log.info({
         submitted: dscrResults.submitted,
         failed: dscrResults.failed
-      });
+      }, 'DSCR calculations triggered');
 
       return NextResponse.json({
         success: true,
@@ -99,11 +121,11 @@ export async function GET(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error('[Transaction Sync] Fatal error during sync:', error);
+    log.error({ err: error }, 'Fatal error during sync');
 
     return NextResponse.json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: 'Sync failed',
       durationMs: Date.now() - startTime
     }, { status: 500 });
   }

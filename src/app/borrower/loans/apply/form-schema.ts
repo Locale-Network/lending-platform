@@ -109,6 +109,9 @@ export const loanApplicationFormSchema = z.object({
   applicationId: z.string(),
   accountAddress: z.string(),
 
+  // Pool Selection (required - borrower must choose which pool to apply to)
+  poolId: z.string().min(1, { message: 'Please select a loan pool to apply to' }),
+
   // Step 1: Business information
   businessLegalName: z.string().min(2, { message: 'Enter the legal name of the business.' }),
   businessAddress: z.string().min(2, { message: 'Enter the address of the business.' }),

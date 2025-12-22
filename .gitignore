@@ -28,9 +28,7 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
-.env.example
-.env.local.example
-.example.env
+# Note: .env.example is NOT ignored - it should be committed as a template
 
 # vercel
 .vercel

@@ -79,7 +79,7 @@ const mockPools = [
     name: 'Working Capital Pool',
     slug: 'working-capital',
     description:
-      '<p>Short-term financing pool for businesses needing working capital. Quick approval process for established businesses with strong financials.</p>',
+      '<p><strong>Coming Soon!</strong> Our new Working Capital Pool provides short-term financing for businesses needing quick access to capital.</p><p><strong>Key Features:</strong></p><ul><li>Fast approval process</li><li>Flexible terms for established businesses</li><li>Competitive rates based on business performance</li></ul><p><strong>Target Businesses:</strong></p><ul><li>E-commerce operators</li><li>Retail & wholesale distributors</li><li>Supply chain businesses</li></ul>',
     poolType: 'SMALL_BUSINESS',
     status: 'DRAFT',
     poolSize: 2000000,
@@ -96,8 +96,9 @@ const mockPools = [
     totalInvestors: 0,
     availableLiquidity: 0,
     annualizedReturn: null,
-    imageUrl: null,
+    imageUrl: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f',
     isFeatured: false,
+    isComingSoon: true,
   },
   {
     name: 'Mixed Asset Pool',

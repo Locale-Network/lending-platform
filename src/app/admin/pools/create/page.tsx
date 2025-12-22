@@ -333,13 +333,40 @@ export default function CreatePoolPage() {
                   <Input
                     id="imageUrl"
                     type="url"
-                    placeholder="https://example.com/pool-image.jpg"
+                    placeholder="https://images.unsplash.com/photo-..."
                     value={formData.imageUrl}
                     onChange={e => handleInputChange('imageUrl', e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Upload to image hosting service and paste URL here
+                    Paste a URL from Unsplash, Imgur, or other image hosting service
                   </p>
+
+                  {/* Image Preview */}
+                  {formData.imageUrl && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Preview:</p>
+                      <div className="relative w-full h-32 rounded-lg border overflow-hidden bg-muted">
+                        <img
+                          src={formData.imageUrl}
+                          alt="Pool preview"
+                          className="w-full h-full object-cover"
+                          onError={e => {
+                            e.currentTarget.style.display = 'none';
+                            const errorDiv = e.currentTarget.nextElementSibling as HTMLElement;
+                            if (errorDiv) errorDiv.classList.remove('hidden');
+                          }}
+                          onLoad={e => {
+                            e.currentTarget.style.display = 'block';
+                            const errorDiv = e.currentTarget.nextElementSibling as HTMLElement;
+                            if (errorDiv) errorDiv.classList.add('hidden');
+                          }}
+                        />
+                        <div className="hidden absolute inset-0 flex items-center justify-center text-sm text-muted-foreground bg-muted">
+                          Failed to load image
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

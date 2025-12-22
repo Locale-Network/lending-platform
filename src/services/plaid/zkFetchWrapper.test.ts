@@ -19,6 +19,15 @@ const { mockZkFetch, mockPrisma, mockSubmitInput } = vi.hoisted(() => ({
 
 vi.mock('server-only', () => ({}));
 
+// Mock the js-sdk verification functions - return true for test proofs
+vi.mock('@reclaimprotocol/js-sdk', () => ({
+  verifyProof: vi.fn().mockResolvedValue(true),
+  transformForOnchain: vi.fn().mockReturnValue({
+    claimInfo: { provider: 'mock', parameters: '{}', context: '' },
+    signedClaim: { claim: {}, signatures: [] },
+  }),
+}));
+
 vi.mock('@reclaimprotocol/zk-fetch', () => {
   // Create a proper mock class that can be instantiated with `new`
   class MockReclaimClient {

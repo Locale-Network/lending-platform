@@ -176,7 +176,13 @@ export function PoolComparisonCheckbox({
   onToggle: (poolId: string) => void;
 }) {
   return (
-    <div className="flex items-center space-x-2" onClick={(e) => e.preventDefault()}>
+    <div
+      className="flex items-center space-x-2"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
       <Checkbox
         id={`compare-${poolId}`}
         checked={isSelected}

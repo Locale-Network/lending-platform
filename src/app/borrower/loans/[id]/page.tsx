@@ -4,14 +4,12 @@ import BusinessInformation from './business-information';
 import LoanInformation from './loan-information';
 import DscrVerificationCard from './dscr-verification-card';
 import TransactionsHistory from './transactions-history';
-import { LoanApplicationStatus } from '@prisma/client';
-import DebtService from './debt-service';
 import {
   getLoanActive,
   getLoanAmount,
   getLoanInterestRate,
   getLoanRepaymentAmount,
-} from '@/services/contracts/simpleLoanPool';
+} from '@/services/contracts/creditTreasuryPool';
 import { getTokenDecimals, getTokenSymbol } from '@/services/contracts/token';
 
 export default async function Page(props: { params: Promise<{ id: string }> }) {
@@ -47,13 +45,6 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
 
   return (
     <>
-      {loanApplication.status !== LoanApplicationStatus.APPROVED &&
-        loanApplication.status !== LoanApplicationStatus.REJECTED && (
-          <div className="flex justify-end">
-            <DebtService loanApplicationId={id} />
-          </div>
-        )}
-      <div className="my-4" />
       <div className="grid grid-cols-1 gap-4 p-0 md:grid-cols-2">
         {/* Left Column - Business Info and Loan Info */}
         <div className="space-y-4">

@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-// Mock Cartesi notice structure - uses snake_case to match DscrVerifiedNotice interface
+// Mock Cartesi notice structure - matches DscrVerifiedNotice interface from relay/index.ts
 export const mockCartesiNotice = {
   index: 0,
   input: { index: 0, epoch: { index: 0 } },
@@ -8,13 +8,21 @@ export const mockCartesiNotice = {
     '0x' +
     Buffer.from(
       JSON.stringify({
-        type: 'dscr_verified_zkfetch',
+        action: 'verify_dscr_zkfetch',
+        success: true,
+        notice_type: 'dscr_verified',
         loan_id: '0x1234567890123456789012345678901234567890123456789012345678901234',
         borrower_address: '0x1234567890123456789012345678901234567890',
-        dscr_value: 15000, // 1.5 DSCR (scaled by 10000)
-        interest_rate: 850, // 8.5% in basis points
-        proof_hash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-        timestamp: new Date().toISOString(),
+        dscr_value: '1.5000', // DSCR value as string
+        monthly_noi: '8500.00',
+        monthly_debt_service: '5666.67',
+        meets_threshold: true,
+        target_dscr: 1.25,
+        transaction_count: 42,
+        zkfetch_proof_hash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+        proof_verified: true,
+        verification_id: 1,
+        calculated_at: Math.floor(Date.now() / 1000),
       })
     ).toString('hex'),
 };

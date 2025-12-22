@@ -12,6 +12,8 @@ import { hashPoolId } from '@/lib/contracts/stakingPool';
  * - Pool metadata (name, description) stored off-chain
  * - Hashed pool ID for contract interaction
  * - Contract address
+ *
+ * Note: Coming Soon pools cannot be staked in.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -26,8 +28,8 @@ export async function GET(request: NextRequest) {
 
     // Fetch pool metadata (off-chain data only)
     const { data: pool, error: poolError } = await supabase
-      .from('pools')
-      .select('id, name, description, slug, imageUrl, contractPoolId')
+      .from('loan_pools')
+      .select('id, name, description, slug, image_url, contract_pool_id, status, is_coming_soon')
       .eq('id', poolId)
       .single();
 
@@ -35,8 +37,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Pool not found' }, { status: 404 });
     }
 
+    // Prevent staking in Coming Soon pools
+    if (pool.is_coming_soon || pool.status !== 'ACTIVE') {
+      return NextResponse.json(
+        { error: 'This pool is not yet accepting investments' },
+        { status: 400 }
+      );
+    }
+
     // Get the hashed pool ID for contract interaction
-    const hashedPoolId = pool.contractPoolId || hashPoolId(poolId);
+    const hashedPoolId = pool.contract_pool_id || hashPoolId(poolId);
 
     return NextResponse.json({
       pool: {
@@ -44,7 +54,7 @@ export async function GET(request: NextRequest) {
         name: pool.name,
         description: pool.description,
         slug: pool.slug,
-        imageUrl: pool.imageUrl,
+        imageUrl: pool.image_url,
       },
       contract: {
         hashedPoolId,
@@ -52,7 +62,6 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Get stake info error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

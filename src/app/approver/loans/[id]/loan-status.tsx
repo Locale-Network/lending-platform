@@ -6,16 +6,7 @@ import { Button } from '@/components/ui/button';
 import { getLoanStatusStyle } from '@/utils/colour';
 import { useTransition, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { HoldToConfirmButton } from '@/components/ui/hold-to-confirm-button';
 
 interface Props {
   approverAddress: string;
@@ -26,13 +17,12 @@ interface Props {
 
 export default function LoanStatus(props: Props) {
   const [isPending, startTransition] = useTransition();
-  const [showDisburseConfirm, setShowDisburseConfirm] = useState(false);
+  const [isDisbursingFunds, setIsDisbursingFunds] = useState(false);
   const { toast } = useToast();
 
   const approvedStyle = getLoanStatusStyle(LoanApplicationStatus.APPROVED);
   const rejectedStyle = getLoanStatusStyle(LoanApplicationStatus.REJECTED);
   const revisionNeededStyle = getLoanStatusStyle(LoanApplicationStatus.ADDITIONAL_INFO_NEEDED);
-  const disbursedStyle = 'bg-blue-600 hover:bg-blue-700 text-white';
 
   const onApprove = () => {
     startTransition(async () => {
@@ -82,13 +72,9 @@ export default function LoanStatus(props: Props) {
     });
   };
 
-  const onDisburse = () => {
-    setShowDisburseConfirm(true);
-  };
-
-  const confirmDisburse = () => {
-    setShowDisburseConfirm(false);
-    startTransition(async () => {
+  const handleDisburse = async () => {
+    setIsDisbursingFunds(true);
+    try {
       const { isError, errorMessage } = await disburseLoan({
         accountAddress: props.approverAddress,
         loanApplicationId: props.loanId,
@@ -99,7 +85,9 @@ export default function LoanStatus(props: Props) {
       } else {
         toast({ title: 'Success', description: 'Funds disbursed to borrower' });
       }
-    });
+    } finally {
+      setIsDisbursingFunds(false);
+    }
   };
 
   return (
@@ -115,18 +103,31 @@ export default function LoanStatus(props: Props) {
 
         {/* Show Disburse button for APPROVED loans (ADMIN only) */}
         {props.currentStatus === LoanApplicationStatus.APPROVED && props.isAdmin && (
-          <Button className={disbursedStyle} onClick={onDisburse} disabled={isPending}>
-            Disburse Funds
-          </Button>
+          <HoldToConfirmButton
+            onConfirm={handleDisburse}
+            duration={2000}
+            disabled={isPending || isDisbursingFunds}
+            loading={isDisbursingFunds}
+            variant="success"
+            size="sm"
+          >
+            Hold to Disburse Funds
+          </HoldToConfirmButton>
         )}
 
         {/* Show Reject button for non-approved/non-rejected loans */}
         {props.currentStatus !== LoanApplicationStatus.REJECTED &&
           props.currentStatus !== LoanApplicationStatus.APPROVED &&
           props.currentStatus !== LoanApplicationStatus.DISBURSED && (
-            <Button className={rejectedStyle} onClick={onReject} disabled={isPending}>
-              Reject
-            </Button>
+            <HoldToConfirmButton
+              onConfirm={onReject}
+              duration={1500}
+              disabled={isPending}
+              variant="destructive"
+              size="sm"
+            >
+              Hold to Reject
+            </HoldToConfirmButton>
           )}
 
         {/* Show Request Revision button */}
@@ -139,24 +140,6 @@ export default function LoanStatus(props: Props) {
           )}
       </div>
 
-      {/* Disbursement Confirmation Dialog */}
-      <AlertDialog open={showDisburseConfirm} onOpenChange={setShowDisburseConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Fund Disbursement</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will transfer funds from the loan pool to the borrower&apos;s wallet. This action
-              cannot be undone. Are you sure you want to proceed?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDisburse} className={disbursedStyle}>
-              Confirm Disbursement
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

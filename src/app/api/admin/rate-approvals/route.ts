@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/authorization';
 import prisma from '@prisma/index';
-import { updateLoanInterestRate } from '@/services/contracts/simpleLoanPool';
+import { updateLoanInterestRate } from '@/services/contracts/creditTreasuryPool';
 
 /**
  * Admin API: Manage Pending Rate Changes

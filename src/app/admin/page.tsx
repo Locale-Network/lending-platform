@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import useSWR from 'swr';
+import CoverflowCarousel from '@/components/ui/coverflow-carousel';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -67,9 +68,14 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-8 p-8 pb-24">
+      {/* Coverflow Carousel */}
+      <div className="animate-fade-in-up">
+        <CoverflowCarousel />
+      </div>
+
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Admin Dashboard</h1>
+      <div className="animate-fade-in-up">
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground mt-2">
           Overview of platform performance and key metrics
         </p>

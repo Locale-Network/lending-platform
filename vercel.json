@@ -2,11 +2,15 @@
     "crons": [
         {
             "path": "/api/cron/sync-transactions",
-            "schedule": "0 2 * * *"
+            "schedule": "0 */12 * * *"
         },
         {
             "path": "/api/cron/notices",
             "schedule": "*/5 * * * *"
+        },
+        {
+            "path": "/api/cron/distribute-yield",
+            "schedule": "0 */6 * * *"
         }
     ]
 }

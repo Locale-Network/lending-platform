@@ -12,7 +12,7 @@ import {
   getLoanApplication,
 } from '@/services/db/loan-applications/borrower';
 import { validateRequest as validateBorrowerRequest } from '@/app/borrower/actions';
-import { getLoanAmount } from '@/services/contracts/simpleLoanPool';
+import { getLoanAmount } from '@/services/contracts/creditTreasuryPool';
 import { getSession } from '@/lib/auth/authorization';
 import { getAllLoanApplicationsOfBorrower as dbGetAllLoanApplicationsOfBorrower } from '@/services/db/loan-applications/borrower';
 import plaidClient from '@/utils/plaid';
@@ -23,6 +23,140 @@ import { submitInput } from '@/services/cartesi';
 import prisma from '@prisma/index';
 import { syncAndSubmitToCartesi, isZkFetchConfigured } from '@/services/plaid/zkFetchWrapper';
 import { getLendScoreForLoan } from '@/services/plaid/lendScore';
+
+// Existing loan data type for prefilling the form
+export interface ExistingLoanData {
+  applicationId: string;
+  poolId: string;
+  businessLegalName: string;
+  businessAddress: string;
+  businessState: string;
+  businessCity: string;
+  businessZipCode: string;
+  ein: string;
+  businessFoundedYear: number;
+  businessLegalStructure: string;
+  businessWebsite: string | null;
+  businessPrimaryIndustry: string;
+  businessDescription: string;
+  requestedLoanAmount: number | null;
+  fundingUrgency: string | null;
+  loanPurpose: string | null;
+  estimatedCreditScore: string | null;
+  hasDebtServiceProof: boolean;
+  hasOutstandingLoans: boolean;
+  outstandingLoans: Array<{
+    lenderName: string;
+    loanType: string;
+    outstandingBalance: number;
+    monthlyPayment: number;
+    remainingMonths: number;
+    annualInterestRate: number;
+  }>;
+}
+
+interface GetExistingLoanApplicationResponse {
+  isError: boolean;
+  errorMessage?: string;
+  loanData?: ExistingLoanData;
+}
+
+export async function getExistingLoanApplication(args: {
+  accountAddress: string;
+  loanApplicationId: string;
+}): Promise<GetExistingLoanApplicationResponse> {
+  try {
+    const { accountAddress, loanApplicationId } = args;
+    await validateBorrowerRequest(accountAddress);
+
+    const normalizedAddress = accountAddress.toLowerCase();
+
+    // Fetch the loan application with its relations
+    const loanApplication = await prisma.loanApplication.findFirst({
+      where: {
+        id: loanApplicationId,
+        accountAddress: normalizedAddress,
+      },
+      include: {
+        outstandingLoans: true,
+        poolLoans: {
+          select: {
+            poolId: true,
+          },
+        },
+        debtService: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!loanApplication) {
+      return {
+        isError: true,
+        errorMessage: 'Loan application not found or you do not have access',
+      };
+    }
+
+    // Check if the loan can be edited (only DRAFT or ADDITIONAL_INFO_NEEDED)
+    if (
+      loanApplication.status !== LoanApplicationStatus.DRAFT &&
+      loanApplication.status !== LoanApplicationStatus.ADDITIONAL_INFO_NEEDED
+    ) {
+      return {
+        isError: true,
+        errorMessage: `Cannot edit application with status: ${loanApplication.status}`,
+      };
+    }
+
+    // Get pool ID from poolLoans if exists
+    const poolId = loanApplication.poolLoans.length > 0 ? loanApplication.poolLoans[0].poolId : '';
+
+    // Check if debt service proof exists
+    const hasDebtServiceProof = loanApplication.debtService.length > 0;
+
+    const loanData: ExistingLoanData = {
+      applicationId: loanApplication.id,
+      poolId,
+      businessLegalName: loanApplication.businessLegalName,
+      businessAddress: loanApplication.businessAddress,
+      businessState: loanApplication.businessState,
+      businessCity: loanApplication.businessCity,
+      businessZipCode: loanApplication.businessZipCode,
+      ein: loanApplication.ein,
+      businessFoundedYear: loanApplication.businessFoundedYear,
+      businessLegalStructure: loanApplication.businessLegalStructure,
+      businessWebsite: loanApplication.businessWebsite,
+      businessPrimaryIndustry: loanApplication.businessPrimaryIndustry,
+      businessDescription: loanApplication.businessDescription,
+      requestedLoanAmount: loanApplication.requestedAmount ? Number(loanApplication.requestedAmount) : null,
+      fundingUrgency: loanApplication.fundingUrgency,
+      loanPurpose: loanApplication.loanPurpose,
+      estimatedCreditScore: loanApplication.estimatedCreditScore,
+      hasDebtServiceProof,
+      hasOutstandingLoans: loanApplication.hasOutstandingLoans,
+      outstandingLoans: loanApplication.outstandingLoans.map(loan => ({
+        lenderName: loan.lenderName,
+        loanType: loan.loanType,
+        outstandingBalance: Number(loan.outstandingBalance),
+        monthlyPayment: Number(loan.monthlyPayment),
+        remainingMonths: loan.remainingMonths,
+        annualInterestRate: Number(loan.annualInterestRate),
+      })),
+    };
+
+    return {
+      isError: false,
+      loanData,
+    };
+  } catch (error) {
+    console.error('Error fetching existing loan application', error);
+    return {
+      isError: true,
+      errorMessage: 'Error fetching loan application',
+    };
+  }
+}
 
 // return loan application id
 interface InitialiseLoanApplicationResponse {

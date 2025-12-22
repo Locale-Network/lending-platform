@@ -36,6 +36,9 @@ export const rateLimits = {
   /** Auth sync endpoint: 100 requests per minute (very permissive for dev/React strict mode) */
   authSync: { limit: 100, windowSeconds: 60 },
 
+  /** Auth sync conflict tracking: 20 conflicts per 10 minutes before forcing re-auth */
+  authSyncConflict: { limit: 20, windowSeconds: 600 },
+
   /** General API endpoints: 100 requests per minute */
   api: { limit: 100, windowSeconds: 60 },
 
@@ -111,26 +114,44 @@ function checkInMemoryRateLimit(
 
 /**
  * Check rate limit using Upstash Redis
+ *
+ * SECURITY NOTE: Rate limiting can ONLY be disabled in development mode.
+ * Production ALWAYS enforces rate limits regardless of environment variables.
  */
 async function checkUpstashRateLimit(
   identifier: string,
   config: RateLimitConfig
 ): Promise<RateLimitResult> {
-  // Skip rate limiting in development for easier testing
-  if (process.env.NODE_ENV === 'development') {
-    return {
-      success: true,
-      limit: config.limit,
-      remaining: config.limit - 1,
-      reset: Date.now() + config.windowSeconds * 1000,
-    };
+  // SECURITY: Rate limiting bypass is ONLY allowed in development
+  // In production, this block is completely ignored - no bypass possible
+  if (process.env.DISABLE_RATE_LIMIT === 'true') {
+    if (process.env.NODE_ENV === 'production') {
+      // CRITICAL: Never bypass in production - log and continue with rate limiting
+      console.error('[Rate Limit] SECURITY: DISABLE_RATE_LIMIT attempted in production - BLOCKED');
+      // Fall through to normal rate limiting
+    } else if (process.env.NODE_ENV === 'development') {
+      // Only bypass in explicit development mode
+      console.warn('[Rate Limit] DEV ONLY: Rate limiting disabled for development');
+      return {
+        success: true,
+        limit: config.limit,
+        remaining: config.limit - 1,
+        reset: Date.now() + config.windowSeconds * 1000,
+      };
+    }
+    // For any other NODE_ENV (test, staging, undefined) - do NOT bypass
   }
 
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
+  // SECURITY: In production, require Redis - do not fall back to in-memory
   if (!url || !token) {
-    console.warn('Upstash Redis not configured, using in-memory fallback');
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Rate Limit] CRITICAL: Redis not configured in production - using strict in-memory limits');
+    } else {
+      console.warn('[Rate Limit] Redis not configured, using in-memory fallback');
+    }
     return checkInMemoryRateLimit(identifier, config);
   }
 
@@ -239,15 +260,43 @@ export function rateLimitHeaders(result: RateLimitResult): HeadersInit {
 
 /**
  * Validate CRON secret for protected CRON endpoints
+ *
+ * Supports two authentication methods:
+ * 1. Bearer token with CRON_SECRET (for manual/external triggers)
+ * 2. Vercel cron header (for Vercel-triggered crons)
+ *
+ * In production, at least one method must succeed.
  */
 export function validateCronSecret(request: Request): boolean {
-  const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
 
+  // CRON_SECRET is required in production
   if (!cronSecret) {
-    console.error('CRON_SECRET not configured');
+    console.error('[Cron] CRON_SECRET not configured - rejecting request');
     return false;
   }
 
-  return authHeader === `Bearer ${cronSecret}`;
+  // Check Bearer token (use lowercase for case-insensitive header matching)
+  const authHeader = request.headers.get('authorization');
+  if (authHeader === `Bearer ${cronSecret}`) {
+    return true;
+  }
+
+  // Check Vercel cron header (Vercel sets this for scheduled crons)
+  // See: https://vercel.com/docs/cron-jobs#securing-cron-jobs
+  const vercelCronHeader = request.headers.get('x-vercel-cron');
+  if (vercelCronHeader === '1') {
+    // Additionally verify the authorization header matches when both are present
+    // This prevents someone from just setting x-vercel-cron header
+    if (!authHeader) {
+      console.warn('[Cron] Vercel cron header present but no auth header - rejecting');
+      return false;
+    }
+    if (authHeader === `Bearer ${cronSecret}`) {
+      return true;
+    }
+  }
+
+  console.warn('[Cron] Invalid or missing authentication');
+  return false;
 }

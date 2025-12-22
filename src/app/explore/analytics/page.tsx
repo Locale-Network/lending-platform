@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, Percent, Users, Activity, Target, Award } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Percent, Users, Activity, Target, Award, Loader2 } from 'lucide-react';
 import useSWR from 'swr';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
@@ -179,7 +179,9 @@ function APYDistributionChart({ pools }: { pools: any[] }) {
           <CardDescription>Distribution of pool APY rates</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-center text-muted-foreground py-8">Loading...</p>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
         </CardContent>
       </Card>
     );
@@ -271,7 +273,9 @@ function PoolTypeBreakdownChart({ pools }: { pools: any[] }) {
           <CardDescription>Distribution by pool type</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-center text-muted-foreground py-8">Loading...</p>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
         </CardContent>
       </Card>
     );
@@ -332,7 +336,9 @@ function PoolPerformanceTable({ pools }: { pools: any[] }) {
           <CardDescription>Detailed performance metrics for all pools</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-center text-muted-foreground py-8">Loading...</p>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
         </CardContent>
       </Card>
     );

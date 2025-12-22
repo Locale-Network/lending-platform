@@ -12,12 +12,14 @@ import { EmailNotificationType, EmailStatus } from '@prisma/client';
  * 3. Provides templates for different notification types
  *
  * IMPORTANT: Actual email sending is NOT implemented yet.
- * This is the foundation - emails will be sent by a worker service post-launch.
+ * This is the foundation - emails will be sent by a worker service once
+ * Locale's email domains are configured with Resend.
  *
  * To implement sending:
- * 1. Add SendGrid/Resend/SES credentials to .env
- * 2. Create a cron job to process pending emails
- * 3. Update EmailNotification status after sending
+ * 1. Configure Locale email domain with Resend
+ * 2. Add RESEND_API_KEY and RESEND_FROM_EMAIL to .env
+ * 3. Create a cron job to process pending emails
+ * 4. Update EmailNotification status after sending
  */
 
 // Email template data types

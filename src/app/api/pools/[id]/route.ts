@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/authorization';
 import prisma from '@prisma/index';
 import { z } from 'zod';
+import { logger } from '@/lib/logger';
+
+const log = logger.child({ module: 'admin-pools' });
 
 // Validation schema for pool updates
 const updatePoolSchema = z.object({
@@ -18,6 +21,7 @@ const updatePoolSchema = z.object({
   allowedIndustries: z.array(z.string()).optional(),
   imageUrl: z.string().url().optional().nullable(),
   isFeatured: z.boolean().optional(),
+  isComingSoon: z.boolean().optional(),
 });
 
 // GET /api/pools/[id] - Get single pool
@@ -83,7 +87,7 @@ export async function GET(
 
     return NextResponse.json(pool);
   } catch (error) {
-    console.error('Error fetching pool:', error);
+    log.error({ err: error }, 'Error fetching pool');
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -152,6 +156,20 @@ export async function PATCH(
       }
     }
 
+    // Coming Soon validation: only DRAFT pools can be marked as Coming Soon
+    if (validatedData.isComingSoon === true && existingPool.status !== 'DRAFT') {
+      return NextResponse.json(
+        { error: 'Only DRAFT pools can be marked as Coming Soon' },
+        { status: 400 }
+      );
+    }
+
+    // Auto-clear isComingSoon when activating a pool
+    if (validatedData.status === 'ACTIVE' && existingPool.isComingSoon) {
+      validatedData.isComingSoon = false;
+      log.info({ poolId: id }, 'Auto-clearing isComingSoon on pool activation');
+    }
+
     // Update pool
     const updatedPool = await prisma.loanPool.update({
       where: { id },
@@ -167,7 +185,7 @@ export async function PATCH(
       );
     }
 
-    console.error('Error updating pool:', error);
+    log.error({ err: error }, 'Error updating pool');
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -240,7 +258,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Pool deleted successfully' });
   } catch (error) {
-    console.error('Error deleting pool:', error);
+    log.error({ err: error }, 'Error deleting pool');
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

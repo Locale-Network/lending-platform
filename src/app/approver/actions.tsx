@@ -16,10 +16,13 @@ import { revalidatePath } from 'next/cache';
 import {
   activateLoan,
   createLoan,
+  getLoanActive,
   getLoanAmount,
+  getLoanPoolRemaining,
   getLoanRemainingMonths,
   getLoanRepaymentAmount,
-} from '@/services/contracts/simpleLoanPool';
+  loanExistsOnChain,
+} from '@/services/contracts/creditTreasuryPool';
 import { getTokenDecimals, getTokenSymbol } from '@/services/contracts/token';
 import { submitInput } from '@/services/cartesi';
 
@@ -242,29 +245,58 @@ export const disburseLoan = async (args: {
       termMonths,
     });
 
-    // Step 1: Create loan on-chain (stores borrower address for fund transfer)
-    console.log(`[Approver] Creating loan on SimpleLoanPool...`);
-    await createLoan(
-      loanApplicationId,
-      borrowerAddress,
-      Number(amountInTokenUnits),
-      interestRate,
-      termMonths
-    );
-    console.log(`[Approver] Loan created on-chain`);
+    // Step 1: Check pool has sufficient funds for disbursement
+    const poolBalance = await getLoanPoolRemaining();
+    console.log(`[Approver] Pool balance: ${poolBalance.toString()}, Required: ${amountInTokenUnits.toString()}`);
 
-    // Step 2: Activate loan (transfers funds to borrower)
-    console.log(`[Approver] Activating loan (transferring funds)...`);
-    await activateLoan(loanApplicationId);
-    console.log(`[Approver] Loan activated, funds transferred to ${borrowerAddress}`);
+    if (poolBalance < amountInTokenUnits) {
+      throw new Error(
+        `Insufficient pool funds. Available: ${poolBalance.toString()}, Required: ${amountInTokenUnits.toString()}. ` +
+          `Transfer funds from StakingPool via Admin Pool Transfer before disbursing.`
+      );
+    }
 
-    // Step 3: Update database status to DISBURSED
+    // Step 2: Check if loan already exists on-chain (idempotency check)
+    const loanExists = await loanExistsOnChain(loanApplicationId);
+
+    if (loanExists) {
+      console.log(`[Approver] Loan ${loanApplicationId} already exists on-chain, skipping createLoan`);
+
+      // Check if loan is already active
+      const isActive = await getLoanActive(loanApplicationId);
+      if (!isActive) {
+        // Loan exists but not active - just activate it
+        console.log(`[Approver] Loan exists but not active, activating...`);
+        await activateLoan(loanApplicationId);
+        console.log(`[Approver] Loan activated, funds transferred to ${borrowerAddress}`);
+      } else {
+        console.log(`[Approver] Loan already active, skipping activation`);
+      }
+    } else {
+      // Step 3: Create loan on-chain (stores borrower address for fund transfer)
+      console.log(`[Approver] Creating loan on SimpleLoanPool...`);
+      await createLoan(
+        loanApplicationId,
+        borrowerAddress,
+        Number(amountInTokenUnits),
+        interestRate,
+        termMonths
+      );
+      console.log(`[Approver] Loan created on-chain`);
+
+      // Step 4: Activate loan (transfers funds to borrower)
+      console.log(`[Approver] Activating loan (transferring funds)...`);
+      await activateLoan(loanApplicationId);
+      console.log(`[Approver] Loan activated, funds transferred to ${borrowerAddress}`);
+    }
+
+    // Step 5: Update database status to DISBURSED
     await dbUpdateLoanApplication({
       loanApplicationId,
       loanApplication: { status: LoanApplicationStatus.DISBURSED },
     });
 
-    // Step 4: Update Cartesi with disbursement status
+    // Step 6: Update Cartesi with disbursement status
     try {
       await submitInput({
         action: 'disburse_loan',

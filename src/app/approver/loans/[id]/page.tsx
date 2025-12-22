@@ -11,7 +11,7 @@ import {
   getLoanActive,
   getLoanInterestRate,
   getLoanRepaymentAmount,
-} from '@/services/contracts/simpleLoanPool';
+} from '@/services/contracts/creditTreasuryPool';
 import { getTokenDecimals } from '@/services/contracts/token';
 import { Suspense } from 'react';
 import { Role } from '@prisma/client';

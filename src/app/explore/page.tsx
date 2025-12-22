@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, Wallet, DollarSign, Activity, ArrowRight, Star, Loader2 } from 'lucide-react';
+import { TrendingUp, Wallet, DollarSign, Activity, ArrowRight, Star } from 'lucide-react';
+import LoadingDots from '@/components/ui/loading-dots';
 import Link from 'next/link';
 import { useWalletAuth } from '@/hooks/useWalletAuth';
 import useSWR from 'swr';
+import CoverflowCarousel from '@/components/ui/coverflow-carousel';
 
 // Types for pool data
 interface Pool {
@@ -130,64 +132,77 @@ export default function InvestorDashboard() {
 
   return (
     <div className="space-y-8 p-8">
+      {/* Coverflow Carousel */}
+      <div className="animate-fade-in-up">
+        <CoverflowCarousel />
+      </div>
+
       {/* Header */}
-      <div>
+      <div className="animate-fade-in-up">
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
       </div>
 
-      {/* Portfolio Metrics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+      {/* Portfolio Metrics - Elevated cards with subtle gradient backgrounds */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 animate-fade-in-stagger">
+        <Card variant="elevated" className="bg-gradient-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Portfolio</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
+            <div className="p-2 rounded-full bg-primary/10">
+              <Wallet className="h-4 w-4 text-primary" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{portfolio.totalValue.toLocaleString()} USDC</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-3xl font-bold tracking-tight">{portfolio.totalValue.toLocaleString()} <span className="text-lg font-medium text-muted-foreground">USDC</span></div>
+            <p className="text-xs text-muted-foreground mt-1">
               {portfolio.totalRewards > 0 ? `+${portfolio.totalRewards.toLocaleString()} USDC from initial` : 'Connect wallet to view'}
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card variant="elevated" className="bg-gradient-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Staked</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <div className="p-2 rounded-full bg-blue-500/10">
+              <DollarSign className="h-4 w-4 text-blue-500" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{portfolio.totalInvested.toLocaleString()} USDC</div>
-            <p className="text-xs text-muted-foreground">Across {portfolio.activeInvestments} pools</p>
+            <div className="text-3xl font-bold tracking-tight">{portfolio.totalInvested.toLocaleString()} <span className="text-lg font-medium text-muted-foreground">USDC</span></div>
+            <p className="text-xs text-muted-foreground mt-1">Across {portfolio.activeInvestments} pools</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card variant="elevated" className="bg-gradient-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Rewards</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <div className="p-2 rounded-full bg-green-500/10">
+              <TrendingUp className="h-4 w-4 text-green-500" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {portfolio.totalRewards.toLocaleString()} USDC
+            <div className="text-3xl font-bold tracking-tight text-green-600">
+              +{portfolio.totalRewards.toLocaleString()} <span className="text-lg font-medium">USDC</span>
             </div>
-            <p className="text-xs text-muted-foreground">All-time earnings</p>
+            <p className="text-xs text-muted-foreground mt-1">All-time earnings</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card variant="elevated" className="bg-gradient-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Average APY</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
+            <div className="p-2 rounded-full bg-purple-500/10">
+              <Activity className="h-4 w-4 text-purple-500" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{portfolio.avgReturn}%</div>
-            <p className="text-xs text-muted-foreground">Weighted across pools</p>
+            <div className="text-3xl font-bold tracking-tight">{portfolio.avgReturn}<span className="text-lg font-medium text-muted-foreground">%</span></div>
+            <p className="text-xs text-muted-foreground mt-1">Weighted across pools</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Quick Actions */}
-      <Card>
+      <Card variant="elevated" className="animate-fade-in-up">
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
           <CardDescription>Get started with your investments</CardDescription>
@@ -210,7 +225,7 @@ export default function InvestorDashboard() {
 
       <div className="grid gap-8 lg:grid-cols-2">
         {/* Featured Pools */}
-        <Card>
+        <Card variant="elevated" className="animate-fade-in-up">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -225,11 +240,10 @@ export default function InvestorDashboard() {
               </Link>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                <span className="ml-2 text-muted-foreground">Loading pools...</span>
+                <LoadingDots size="sm" />
               </div>
             ) : error ? (
               <div className="text-center py-8 text-destructive">
@@ -244,38 +258,40 @@ export default function InvestorDashboard() {
                 <p className="text-sm mt-1">Check back soon for investment opportunities!</p>
               </div>
             ) : (
-              featuredPools.map(pool => {
-                // Calculate estimated APY from base rate + risk premium midpoint
-                const estimatedApy = pool.annualizedReturn ||
-                  (pool.baseInterestRate + (pool.riskPremiumMin + pool.riskPremiumMax) / 2);
+              <div className="space-y-3">
+                {featuredPools.map(pool => {
+                  // Calculate estimated APY from base rate + risk premium midpoint
+                  const estimatedApy = pool.annualizedReturn ||
+                    (pool.baseInterestRate + (pool.riskPremiumMin + pool.riskPremiumMax) / 2);
 
-                return (
-                  <div key={pool.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold">{pool.name}</p>
-                        {pool.isFeatured && (
-                          <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                        )}
+                  return (
+                    <div key={pool.id} className="flex items-center justify-between p-4 border rounded-xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-200 group">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold group-hover:text-primary transition-colors">{pool.name}</p>
+                          {pool.isFeatured && (
+                            <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                          )}
+                        </div>
+                        <div className="flex gap-4 text-sm text-muted-foreground">
+                          <span className="font-medium text-green-600">{estimatedApy.toFixed(1)}% APY</span>
+                          <span>TVL: {(pool.totalStaked / 1000000).toFixed(2)}M</span>
+                          <span className="text-blue-600">{getRiskLevel(pool.poolType)} Risk</span>
+                        </div>
                       </div>
-                      <div className="flex gap-4 text-sm text-muted-foreground">
-                        <span>APY: {estimatedApy.toFixed(1)}%</span>
-                        <span>TVL: {(pool.totalStaked / 1000000).toFixed(2)}M USDC</span>
-                        <span className="text-blue-600">{getRiskLevel(pool.poolType)} Risk</span>
-                      </div>
+                      <Link href={`/explore/pools/${pool.slug}`}>
+                        <Button size="sm">Stake</Button>
+                      </Link>
                     </div>
-                    <Link href={`/explore/pools/${pool.slug}`}>
-                      <Button size="sm">Stake</Button>
-                    </Link>
-                  </div>
-                );
-              })
+                  );
+                })}
+              </div>
             )}
           </CardContent>
         </Card>
 
         {/* Recent Activity */}
-        <Card>
+        <Card variant="elevated" className="animate-fade-in-up">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -290,7 +306,7 @@ export default function InvestorDashboard() {
               </Link>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             {!address ? (
               <div className="text-center py-8 text-muted-foreground">
                 <p>Connect your wallet to see activity</p>
@@ -301,34 +317,36 @@ export default function InvestorDashboard() {
                 <p className="text-sm mt-1">Start investing to see your transactions here</p>
               </div>
             ) : (
-              recentActivity.map(activity => (
-                <div key={activity.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          activity.type === 'stake'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-orange-100 text-orange-800'
-                        }`}
-                      >
-                        {activity.type === 'stake' ? 'Staked' : 'Unstaked'}
-                      </span>
-                      {activity.poolSlug ? (
-                        <Link href={`/explore/pools/${activity.poolSlug}`} className="font-medium hover:underline">
-                          {activity.pool}
-                        </Link>
-                      ) : (
-                        <p className="font-medium">{activity.pool}</p>
-                      )}
+              <div className="space-y-3">
+                {recentActivity.map(activity => (
+                  <div key={activity.id} className="flex items-center justify-between p-4 border rounded-xl hover:bg-accent/50 transition-all duration-200">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                            activity.type === 'stake'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-orange-100 text-orange-700'
+                          }`}
+                        >
+                          {activity.type === 'stake' ? 'Staked' : 'Unstaked'}
+                        </span>
+                        {activity.poolSlug ? (
+                          <Link href={`/explore/pools/${activity.poolSlug}`} className="font-medium hover:text-primary transition-colors">
+                            {activity.pool}
+                          </Link>
+                        ) : (
+                          <p className="font-medium">{activity.pool}</p>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{activity.date}</p>
                     </div>
-                    <p className="text-sm text-muted-foreground">{activity.date}</p>
+                    <p className={`font-bold text-lg ${activity.type === 'stake' ? 'text-green-600' : 'text-orange-600'}`}>
+                      {activity.type === 'stake' ? '+' : '-'}{activity.amount.toLocaleString()}
+                    </p>
                   </div>
-                  <p className={`font-semibold ${activity.type === 'stake' ? 'text-green-600' : 'text-orange-600'}`}>
-                    {activity.type === 'stake' ? '+' : '-'}{activity.amount.toLocaleString()} USDC
-                  </p>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>

@@ -1,6 +1,6 @@
 'use client';
 
-import { HandCoins, Home, User } from 'lucide-react';
+import { Home, User } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 
@@ -20,11 +20,6 @@ const items = [
     title: 'Home',
     url: '/borrower',
     icon: Home,
-  },
-  {
-    title: 'Loans',
-    url: '/borrower/loans',
-    icon: HandCoins,
   },
   {
     title: 'Account',

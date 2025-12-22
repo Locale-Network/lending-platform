@@ -142,6 +142,33 @@ export const stakingPoolAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
+  {
+    type: 'function',
+    name: 'distributeYield',
+    inputs: [
+      { name: '_poolId', type: 'bytes32', internalType: 'bytes32' },
+      { name: '_amount', type: 'uint256', internalType: 'uint256' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'transferToLoanPool',
+    inputs: [
+      { name: '_amount', type: 'uint256', internalType: 'uint256' },
+      { name: '_destination', type: 'address', internalType: 'address' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'totalTransferredToLoanPool',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256', internalType: 'uint256' }],
+    stateMutability: 'view',
+  },
   // Events
   {
     type: 'event',
@@ -180,6 +207,22 @@ export const stakingPoolAbi = [
     inputs: [
       { name: 'poolId', type: 'bytes32', indexed: true, internalType: 'bytes32' },
       { name: 'user', type: 'address', indexed: true, internalType: 'address' },
+      { name: 'amount', type: 'uint256', indexed: false, internalType: 'uint256' },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'YieldDistributed',
+    inputs: [
+      { name: 'poolId', type: 'bytes32', indexed: true, internalType: 'bytes32' },
+      { name: 'amount', type: 'uint256', indexed: false, internalType: 'uint256' },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'FundsTransferredToLoanPool',
+    inputs: [
+      { name: 'destination', type: 'address', indexed: true, internalType: 'address' },
       { name: 'amount', type: 'uint256', indexed: false, internalType: 'uint256' },
     ],
   },

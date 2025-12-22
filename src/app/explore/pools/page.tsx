@@ -1,17 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Search, TrendingUp, Users, Wallet, Star, Filter, Loader2 } from 'lucide-react';
-import Link from 'next/link';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Search, Filter } from 'lucide-react';
+import LoadingDots from '@/components/ui/loading-dots';
 import useSWR from 'swr';
-import { AdvancedFiltersPanel, type AdvancedFilters } from '@/components/pools/advanced-filters';
-import { ActiveFilters } from '@/components/pools/active-filters';
-import { PoolComparison, PoolComparisonCheckbox } from '@/components/pools/pool-comparison';
+import { PoolComparison } from '@/components/pools/pool-comparison';
+import { ExpandablePoolCard } from '@/components/pools/expandable-pool-card';
+import { type AdvancedFilters } from '@/components/pools/advanced-filters';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -141,7 +141,7 @@ export default function PoolsPage() {
   return (
     <div className="space-y-8 p-8 pb-24">
       {/* Header */}
-      <div>
+      <div className="animate-fade-in-up">
         <h1 className="text-3xl font-bold tracking-tight">Staking Pools</h1>
         <p className="text-muted-foreground mt-2">
           Discover lending pools that match your investment goals
@@ -151,8 +151,7 @@ export default function PoolsPage() {
       {/* Loading State */}
       {isLoading && (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <span className="ml-2 text-muted-foreground">Loading pools...</span>
+          <LoadingDots size="md" />
         </div>
       )}
 
@@ -169,7 +168,7 @@ export default function PoolsPage() {
         <>
 
       {/* Filters and Search */}
-      <Card>
+      <Card variant="elevated" className="animate-fade-in-up">
         <CardContent className="pt-6">
           <div className="grid gap-4 md:grid-cols-5">
             <div className="md:col-span-2">
@@ -241,111 +240,35 @@ export default function PoolsPage() {
       </div>
 
       {/* Pools Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 animate-fade-in-stagger">
         {filteredPools.map((pool: any) => (
-          <Card key={pool.id} className="hover:shadow-lg transition-all hover:scale-[1.02]">
-            <CardHeader>
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex gap-2 flex-wrap">
-                  {pool.isFeatured && (
-                    <Badge className="bg-yellow-400 text-yellow-900 hover:bg-yellow-500">
-                      <Star className="h-3 w-3 mr-1 fill-current" />
-                      Featured
-                    </Badge>
-                  )}
-                  <Badge className={statusColors[pool.status as keyof typeof statusColors]}>
-                    {pool.status}
-                  </Badge>
-                </div>
-                <PoolComparisonCheckbox
-                  poolId={pool.id}
-                  isSelected={selectedForComparison.includes(pool.id)}
-                  onToggle={togglePoolForComparison}
-                />
-              </div>
-              <CardTitle className="text-xl">{pool.name}</CardTitle>
-              <CardDescription className="line-clamp-2" dangerouslySetInnerHTML={{ __html: pool.description }} />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Key Metrics */}
-              <div className="grid grid-cols-2 gap-3 p-4 bg-accent/50 rounded-lg">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">APY</p>
-                  <p className="text-2xl font-bold text-green-600">{pool.annualizedReturn?.toFixed(1) || 'N/A'}%</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">TVL</p>
-                  <p className="text-xl font-bold">
-                    ${(pool.totalStaked / 1000000).toFixed(1)}M
-                  </p>
-                </div>
-              </div>
-
-              {/* Additional Info */}
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground flex items-center gap-1">
-                    <Users className="h-3 w-3" />
-                    Investors
-                  </span>
-                  <span className="font-medium">{pool.totalInvestors}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground flex items-center gap-1">
-                    <Wallet className="h-3 w-3" />
-                    Min. Stake
-                  </span>
-                  <span className="font-medium">${pool.minimumStake}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground flex items-center gap-1">
-                    <TrendingUp className="h-3 w-3" />
-                    Pool Type
-                  </span>
-                  <Badge variant="outline">
-                    {pool.poolType.replace('_', ' ')}
-                  </Badge>
-                </div>
-              </div>
-
-              {/* Available Liquidity */}
-              <div className="pt-3 border-t">
-                <p className="text-xs text-muted-foreground mb-1">Available to Lend</p>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-green-500 h-2 rounded-full"
-                      style={{
-                        width: `${(pool.availableLiquidity / pool.totalStaked) * 100}%`,
-                      }}
-                    />
-                  </div>
-                  <span className="text-xs font-medium">
-                    ${(pool.availableLiquidity / 1000).toFixed(0)}K
-                  </span>
-                </div>
-              </div>
-
-              {/* Action Button */}
-              <Link href={`/explore/pools/${pool.slug}`}>
-                <Button className="w-full" size="lg">
-                  View Pool Details
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+          <ExpandablePoolCard
+            key={pool.id}
+            pool={pool}
+            statusColors={statusColors}
+            isSelectedForComparison={selectedForComparison.includes(pool.id)}
+            onToggleComparison={togglePoolForComparison}
+          />
         ))}
       </div>
 
       {/* Empty State */}
       {filteredPools.length === 0 && (
-        <Card className="p-12 text-center">
-          <Filter className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-semibold mb-2">No pools found</h3>
-          <p className="text-muted-foreground">
-            Try adjusting your filters or search terms
-          </p>
-        </Card>
+        <EmptyState
+          icon={<Filter />}
+          title="No pools found"
+          description="Try adjusting your filters or search terms to find pools that match your criteria."
+          action={
+            <Button variant="outline" onClick={() => {
+              setSearchTerm('');
+              setFilterType('all');
+              setFilterStatus('all');
+              resetAdvancedFilters();
+            }}>
+              Clear all filters
+            </Button>
+          }
+        />
       )}
       </>
       )}

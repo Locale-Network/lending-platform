@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit, getClientIp, rateLimitHeaders } from '@/lib/rate-limit';
+
+// RPC rate limit: 200 requests per minute per IP
+// More generous than API because RPC is needed for wallet operations
+const RPC_RATE_LIMIT = { limit: 200, windowSeconds: 60 };
 
 /**
  * API Route for Alchemy Account Kit RPC and Signer API calls
@@ -9,11 +14,24 @@ import { NextRequest, NextResponse } from 'next/server';
  * Handles:
  * - Standard RPC calls (eth_call, eth_sendTransaction, etc.)
  * - Signer API calls (signer-config, authentication, etc.)
+ *
+ * Rate limiting prevents a single user from exhausting Alchemy quota.
  */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ route?: string[] }> }
 ) {
+  // Rate limit by client IP
+  const clientIp = await getClientIp();
+  const rateLimitResult = await checkRateLimit(`rpc:${clientIp}`, RPC_RATE_LIMIT);
+
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { error: 'RPC rate limit exceeded. Please wait before making more requests.' },
+      { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+    );
+  }
+
   const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
 
   if (!apiKey) {
@@ -69,9 +87,20 @@ export async function POST(
 
 // Also handle GET requests for signer config
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ route?: string[] }> }
 ) {
+  // Rate limit by client IP
+  const clientIp = await getClientIp();
+  const rateLimitResult = await checkRateLimit(`rpc:${clientIp}`, RPC_RATE_LIMIT);
+
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { error: 'RPC rate limit exceeded. Please wait before making more requests.' },
+      { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+    );
+  }
+
   const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
 
   if (!apiKey) {

@@ -83,3 +83,216 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ========================================
+   Modern UI Enhancement Utilities
+   Inspired by Mercury, Ramp, Robinhood, MoonPay
+   ======================================== */
+
+@layer utilities {
+  /* Soft layered shadows (Mercury-style depth) */
+  .shadow-soft {
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.02),
+      0 4px 8px rgba(0, 0, 0, 0.04),
+      0 16px 32px rgba(0, 0, 0, 0.06);
+  }
+
+  .shadow-soft-lg {
+    box-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.02),
+      0 8px 16px rgba(0, 0, 0, 0.06),
+      0 24px 48px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Glassmorphism effect for modals/overlays */
+  .glass {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .glass-subtle {
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* Card hover lift effect */
+  .hover-lift {
+    @apply transition-all duration-200;
+  }
+  .hover-lift:hover {
+    @apply -translate-y-0.5 shadow-lg;
+  }
+
+  /* Gradient backgrounds for stat cards */
+  .bg-gradient-subtle {
+    background: linear-gradient(135deg, hsl(var(--card)) 0%, hsl(var(--muted) / 0.3) 100%);
+  }
+
+  .bg-gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.05) 0%, hsl(var(--primary) / 0.02) 100%);
+  }
+
+  /* Progress bar gradient */
+  .progress-gradient {
+    background: linear-gradient(90deg, hsl(210 100% 50%) 0%, hsl(142 76% 45%) 100%);
+  }
+}
+
+/* Shimmer loading animation */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 25%,
+    hsl(var(--muted-foreground) / 0.08) 50%,
+    hsl(var(--muted)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Content fade-in animation */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.3s ease-out forwards;
+}
+
+/* Staggered fade-in for list items */
+.animate-fade-in-stagger > * {
+  opacity: 0;
+  animation: fade-in-up 0.3s ease-out forwards;
+}
+
+.animate-fade-in-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.animate-fade-in-stagger > *:nth-child(2) { animation-delay: 50ms; }
+.animate-fade-in-stagger > *:nth-child(3) { animation-delay: 100ms; }
+.animate-fade-in-stagger > *:nth-child(4) { animation-delay: 150ms; }
+.animate-fade-in-stagger > *:nth-child(5) { animation-delay: 200ms; }
+.animate-fade-in-stagger > *:nth-child(6) { animation-delay: 250ms; }
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer,
+  .animate-fade-in-up,
+  .animate-fade-in-stagger > *,
+  .hover-lift {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ========================================
+   View Transitions API - Pool Card Expansion
+   App Store-style smooth card expansion
+   ======================================== */
+
+/* Custom easing for App Store-like feel - applied to all view transitions */
+::view-transition-group(*) {
+  animation-duration: 0.5s;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Pool card view transition - smooth morph animation */
+::view-transition-group(pool-card) {
+  z-index: 1001;
+  animation-duration: 0.5s;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+::view-transition-old(pool-card) {
+  height: 100%;
+  width: 100%;
+  overflow: clip;
+  border-radius: 16px;
+  animation: vt-card-fade-out 0.5s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+::view-transition-new(pool-card) {
+  height: 100%;
+  width: 100%;
+  overflow: clip;
+  border-radius: 16px;
+  animation: vt-card-fade-in 0.5s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes vt-card-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes vt-card-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Pool title view transition - maintains text position during morph */
+::view-transition-group(pool-title) {
+  z-index: 1002;
+  animation-duration: 0.5s;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+::view-transition-old(pool-title) {
+  height: auto;
+  width: 100%;
+  animation: vt-card-fade-out 0.3s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+::view-transition-new(pool-title) {
+  height: auto;
+  width: 100%;
+  animation: vt-card-fade-in 0.3s cubic-bezier(0.32, 0.72, 0, 1) 0.2s forwards;
+  opacity: 0;
+}
+
+/* Overlay fade transition */
+::view-transition-group(overlay) {
+  z-index: 1000;
+}
+
+::view-transition-old(overlay) {
+  animation: vt-fade-out 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+::view-transition-new(overlay) {
+  animation: vt-fade-in 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes vt-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes vt-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Fallback animations for browsers without View Transitions */
+@supports not (view-transition-name: none) {
+  .overlay {
+    animation: vt-fade-in 0.3s ease-out;
+  }
+}

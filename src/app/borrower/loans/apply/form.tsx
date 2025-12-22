@@ -61,17 +61,22 @@ import {
 } from './form-schema';
 import PlaidLink from './plaid-link';
 import DscrVerificationStatus from './dscr-verification-status';
+import { AvailablePool, ExistingLoanData } from './page';
 
 interface LoanApplicationFormProps {
   loanApplicationId: string;
   accountAddress: string;
   linkToken: string;
+  availablePools: AvailablePool[];
+  existingLoanData?: ExistingLoanData;
 }
 
 export default function LoanApplicationForm({
   loanApplicationId,
   accountAddress,
   linkToken,
+  availablePools,
+  existingLoanData,
 }: LoanApplicationFormProps) {
   const [plaidAccessToken, setPlaidAccessToken] = useState<string | null>(null);
   const [step, setStep] = useState(1);
@@ -85,35 +90,71 @@ export default function LoanApplicationForm({
 
   const form = useForm<z.infer<typeof loanApplicationFormSchema>>({
     resolver: zodResolver(loanApplicationFormSchema),
-    defaultValues: {
-      applicationId: loanApplicationId,
-      accountAddress,
-      // Step 1: Business information
-      businessLegalName: '',
-      businessAddress: '',
-      businessState: undefined,
-      businessCity: '',
-      businessZipCode: '',
-      ein: '',
-      businessFoundedYear: undefined,
-      businessLegalStructure: undefined,
-      businessWebsite: '',
-      businessPrimaryIndustry: undefined,
-      businessDescription: '',
-      // Step 2: Loan Details
-      requestedLoanAmount: undefined,
-      fundingUrgency: undefined,
-      loanPurpose: undefined,
-      // Step 3: Credit Score
-      estimatedCreditScore: undefined,
-      // Step 4: Bank Connection
-      hasDebtServiceProof: false,
-      // Step 5: Current Loans
-      hasOutstandingLoans: false,
-      outstandingLoans: [],
-      // Step 6: Terms Agreement
-      agreedToTerms: false,
-    },
+    defaultValues: existingLoanData
+      ? {
+          // Prefill with existing data
+          applicationId: loanApplicationId,
+          accountAddress,
+          // Pool Selection
+          poolId: existingLoanData.poolId || '',
+          // Step 1: Business information
+          businessLegalName: existingLoanData.businessLegalName || '',
+          businessAddress: existingLoanData.businessAddress || '',
+          businessState: (existingLoanData.businessState as USState) || undefined,
+          businessCity: existingLoanData.businessCity || '',
+          businessZipCode: existingLoanData.businessZipCode || '',
+          ein: existingLoanData.ein || '',
+          businessFoundedYear: existingLoanData.businessFoundedYear || undefined,
+          businessLegalStructure: (existingLoanData.businessLegalStructure as BusinessLegalStructure) || undefined,
+          businessWebsite: existingLoanData.businessWebsite || '',
+          businessPrimaryIndustry: (existingLoanData.businessPrimaryIndustry as BusinessIndustry) || undefined,
+          businessDescription: existingLoanData.businessDescription || '',
+          // Step 2: Loan Details
+          requestedLoanAmount: existingLoanData.requestedLoanAmount || undefined,
+          fundingUrgency: (existingLoanData.fundingUrgency as FundingUrgencyType) || undefined,
+          loanPurpose: (existingLoanData.loanPurpose as LoanPurposeType) || undefined,
+          // Step 3: Credit Score
+          estimatedCreditScore: (existingLoanData.estimatedCreditScore as EstimatedCreditScoreType) || undefined,
+          // Step 4: Bank Connection
+          hasDebtServiceProof: existingLoanData.hasDebtServiceProof || false,
+          // Step 5: Current Loans
+          hasOutstandingLoans: existingLoanData.hasOutstandingLoans || false,
+          outstandingLoans: existingLoanData.outstandingLoans || [],
+          // Step 6: Terms Agreement (reset when editing - user must re-agree)
+          agreedToTerms: false,
+        }
+      : {
+          // Empty form for new application
+          applicationId: loanApplicationId,
+          accountAddress,
+          // Pool Selection
+          poolId: '',
+          // Step 1: Business information
+          businessLegalName: '',
+          businessAddress: '',
+          businessState: undefined,
+          businessCity: '',
+          businessZipCode: '',
+          ein: '',
+          businessFoundedYear: undefined,
+          businessLegalStructure: undefined,
+          businessWebsite: '',
+          businessPrimaryIndustry: undefined,
+          businessDescription: '',
+          // Step 2: Loan Details
+          requestedLoanAmount: undefined,
+          fundingUrgency: undefined,
+          loanPurpose: undefined,
+          // Step 3: Credit Score
+          estimatedCreditScore: undefined,
+          // Step 4: Bank Connection
+          hasDebtServiceProof: false,
+          // Step 5: Current Loans
+          hasOutstandingLoans: false,
+          outstandingLoans: [],
+          // Step 6: Terms Agreement
+          agreedToTerms: false,
+        },
   });
 
   const businessState = useWatch({
@@ -240,7 +281,7 @@ export default function LoanApplicationForm({
         return await form.trigger(step1Fields);
       }
       case 2: {
-        const step2Fields = ['requestedLoanAmount', 'fundingUrgency', 'loanPurpose'] as const;
+        const step2Fields = ['poolId', 'requestedLoanAmount', 'fundingUrgency', 'loanPurpose'] as const;
         return await form.trigger(step2Fields);
       }
       case 3: {
@@ -451,7 +492,7 @@ export default function LoanApplicationForm({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>State</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue />
@@ -476,7 +517,7 @@ export default function LoanApplicationForm({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>City</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue />
@@ -555,7 +596,7 @@ export default function LoanApplicationForm({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Legal structure</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue />
@@ -596,7 +637,7 @@ export default function LoanApplicationForm({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Primary industry</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue />
@@ -635,6 +676,42 @@ export default function LoanApplicationForm({
             {/* Step 2: Loan Details */}
             {step === 2 && (
               <div className="space-y-6">
+                {/* Pool Selection */}
+                <FormField
+                  control={form.control}
+                  name="poolId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Select a Loan Pool</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choose which pool to apply to..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availablePools.map(pool => (
+                            <SelectItem key={pool.id} value={pool.id}>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{pool.name}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {pool.poolType} • {pool.baseInterestRate}% base rate • $
+                                  {pool.availableLiquidity.toLocaleString()} available
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Choose the loan pool that best fits your business needs. Each pool has
+                        different rates and terms.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <FormField
                   control={form.control}
                   name="requestedLoanAmount"
@@ -672,7 +749,7 @@ export default function LoanApplicationForm({
                       <FormControl>
                         <RadioGroup
                           onValueChange={field.onChange}
-                          defaultValue={field.value}
+                          value={field.value}
                           className="flex flex-col space-y-2"
                         >
                           {Object.entries(FundingUrgencyLabels).map(([value, label]) => (
@@ -704,7 +781,7 @@ export default function LoanApplicationForm({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>What are you getting the financing for?</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select purpose..." />
@@ -737,7 +814,7 @@ export default function LoanApplicationForm({
                       <FormControl>
                         <RadioGroup
                           onValueChange={field.onChange}
-                          defaultValue={field.value}
+                          value={field.value}
                           className="flex flex-col space-y-2"
                         >
                           {Object.entries(CreditScoreLabels).map(([value, label]) => (
@@ -1023,6 +1100,12 @@ export default function LoanApplicationForm({
                     <div>
                       <p className="text-muted-foreground">Business</p>
                       <p className="font-medium">{form.getValues('businessLegalName')}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Loan Pool</p>
+                      <p className="font-medium">
+                        {availablePools.find(p => p.id === form.getValues('poolId'))?.name || 'Not selected'}
+                      </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Loan Amount</p>

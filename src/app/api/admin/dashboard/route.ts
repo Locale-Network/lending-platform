@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/authorization';
 import prisma from '@prisma/index';
+import { logger } from '@/lib/logger';
+
+const log = logger.child({ module: 'admin-dashboard' });
 
 // GET /api/admin/dashboard - Get comprehensive admin dashboard stats
 export async function GET(request: NextRequest) {
@@ -14,129 +17,143 @@ export async function GET(request: NextRequest) {
     // Check if user is admin
     const user = await prisma.account.findUnique({
       where: { address: session.address },
+      select: { role: true },
     });
 
     if (user?.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
-    // Get all pools with their stakes and loans
-    const pools = await prisma.loanPool.findMany({
-      include: {
-        stakes: {
-          include: {
-            investor: true,
-          },
+    // Optimized: Run all queries in parallel with selective fields
+    const [
+      poolStats,
+      uniqueInvestorCount,
+      approvedLoansCount,
+      totalLoanValue,
+      recentLoansData,
+      activePoolsData,
+    ] = await Promise.all([
+      // Pool stats using aggregation - avoids loading all pool data
+      prisma.loanPool.groupBy({
+        by: ['status'],
+        _count: { id: true },
+        _sum: { totalStaked: true, managementFeeRate: true },
+        _avg: { annualizedReturn: true },
+      }),
+
+      // Unique investors count - distinct query
+      prisma.investorStake.findMany({
+        distinct: ['investorAddress'],
+        select: { investorAddress: true },
+      }),
+
+      // Approved loans count
+      prisma.loanApplication.count({
+        where: { status: 'APPROVED' },
+      }),
+
+      // Total loan value from pool loans
+      prisma.poolLoan.aggregate({
+        _sum: { principal: true },
+      }),
+
+      // Recent loan applications - limited and selective
+      prisma.loanApplication.findMany({
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          accountAddress: true,
+          amount: true,
+          status: true,
+          businessLegalName: true,
+          createdAt: true,
         },
-        loans: {
-          include: {
-            loanApplication: true,
-          },
+      }),
+
+      // Active pools - limited and selective
+      prisma.loanPool.findMany({
+        where: { status: 'ACTIVE' },
+        take: 5,
+        orderBy: { totalStaked: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          totalStaked: true,
+          totalInvestors: true,
+          annualizedReturn: true,
+          baseInterestRate: true,
+          riskPremiumMin: true,
+          riskPremiumMax: true,
         },
+      }),
+    ]);
+
+    // Process pool stats from groupBy result
+    const statusCounts = poolStats.reduce(
+      (acc, stat) => {
+        acc[stat.status] = stat._count.id;
+        acc.totalTVL += stat._sum.totalStaked || 0;
+        acc.totalMgmtFees += (stat._sum.totalStaked || 0) * (stat._sum.managementFeeRate || 0) / 100;
+        return acc;
       },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // Get all investors with stakes
-    const investorStakes = await prisma.investorStake.findMany({
-      include: {
-        pool: true,
-        investor: true,
-      },
-    });
-
-    // Get loan applications
-    const loanApplications = await prisma.loanApplication.findMany({
-      include: {
-        poolLoans: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // Calculate stats
-    const totalPools = pools.length;
-    const activePools = pools.filter(p => p.status === 'ACTIVE').length;
-    const draftPools = pools.filter(p => p.status === 'DRAFT').length;
-    const pausedPools = pools.filter(p => p.status === 'PAUSED').length;
-    const closedPools = pools.filter(p => p.status === 'CLOSED').length;
-
-    // Total Value Locked across all pools
-    const totalValueLocked = pools.reduce((sum, pool) => sum + pool.totalStaked, 0);
-
-    // Unique investors (by address)
-    const uniqueInvestors = new Set(investorStakes.map(s => s.investorAddress)).size;
-
-    // Calculate average APY from active pools with annualized return
-    const poolsWithAPY = pools.filter(p => p.status === 'ACTIVE' && p.annualizedReturn !== null);
-    const averageAPY = poolsWithAPY.length > 0
-      ? poolsWithAPY.reduce((sum, pool) => sum + (pool.annualizedReturn || 0), 0) / poolsWithAPY.length
-      : 0;
-
-    // Total loans and loan value
-    const totalLoans = loanApplications.filter(l => l.status === 'APPROVED').length;
-    const totalLoanValue = pools.reduce(
-      (sum, pool) => sum + pool.loans.reduce((loanSum, loan) => loanSum + loan.principal, 0),
-      0
+      { ACTIVE: 0, DRAFT: 0, PAUSED: 0, CLOSED: 0, totalTVL: 0, totalMgmtFees: 0 } as Record<string, number>
     );
 
-    // Platform revenue (management + performance fees earned)
-    // Simplified calculation: management fee on TVL
-    const managementFeesEarned = pools.reduce((sum, pool) => {
-      return sum + (pool.totalStaked * pool.managementFeeRate / 100);
-    }, 0);
+    const totalPools = poolStats.reduce((sum, stat) => sum + stat._count.id, 0);
 
-    // Recent loan applications
-    const recentLoans = loanApplications
-      .slice(0, 5)
-      .map(loan => ({
-        id: loan.id,
-        borrower: loan.accountAddress.slice(0, 6) + '...' + loan.accountAddress.slice(-4),
-        amount: loan.amount || 0,
-        status: loan.status.toLowerCase(),
-        businessName: loan.businessLegalName,
-        date: getRelativeTime(loan.createdAt),
-        createdAt: loan.createdAt,
-      }));
+    // Calculate average APY from active pools
+    const activePoolStat = poolStats.find(s => s.status === 'ACTIVE');
+    const averageAPY = activePoolStat?._avg?.annualizedReturn || 0;
 
-    // Active pools data
-    const activePoolsData = pools
-      .filter(p => p.status === 'ACTIVE')
-      .slice(0, 5)
-      .map(pool => ({
-        id: pool.id,
-        name: pool.name,
-        slug: pool.slug,
-        tvl: pool.totalStaked,
-        investors: pool.totalInvestors,
-        apy: pool.annualizedReturn || (pool.baseInterestRate + (pool.riskPremiumMin + pool.riskPremiumMax) / 2),
-      }));
+    // Transform recent loans
+    const recentLoans = recentLoansData.map(loan => ({
+      id: loan.id,
+      borrower: loan.accountAddress.slice(0, 6) + '...' + loan.accountAddress.slice(-4),
+      amount: loan.amount || 0,
+      status: loan.status.toLowerCase(),
+      businessName: loan.businessLegalName,
+      date: getRelativeTime(loan.createdAt),
+      createdAt: loan.createdAt,
+    }));
+
+    // Transform active pools
+    const activePools = activePoolsData.map(pool => ({
+      id: pool.id,
+      name: pool.name,
+      slug: pool.slug,
+      tvl: pool.totalStaked,
+      investors: pool.totalInvestors,
+      apy: pool.annualizedReturn || (pool.baseInterestRate + (pool.riskPremiumMin + pool.riskPremiumMax) / 2),
+    }));
 
     return NextResponse.json({
       stats: {
-        totalValueLocked,
+        totalValueLocked: statusCounts.totalTVL,
         tvlChange: 0, // Would need historical data to calculate
-        totalLoans,
+        totalLoans: approvedLoansCount,
         loansChange: 0,
-        activeInvestors: uniqueInvestors,
+        activeInvestors: uniqueInvestorCount.length,
         investorsChange: 0,
-        platformRevenue: Math.round(managementFeesEarned),
+        platformRevenue: Math.round(statusCounts.totalMgmtFees),
         revenueChange: 0,
       },
       poolStats: {
         totalPools,
-        activePools,
-        draftPools,
-        pausedPools,
-        closedPools,
+        activePools: statusCounts.ACTIVE,
+        draftPools: statusCounts.DRAFT,
+        pausedPools: statusCounts.PAUSED,
+        closedPools: statusCounts.CLOSED,
         averageAPY,
-        totalLoanValue,
-        totalLoansIssued: totalLoans,
+        totalLoanValue: totalLoanValue._sum.principal || 0,
+        totalLoansIssued: approvedLoansCount,
       },
       recentLoans,
-      activePools: activePoolsData,
+      activePools,
     });
   } catch (error) {
-    console.error('Error fetching admin dashboard:', error);
+    log.error({ err: error }, 'Error fetching admin dashboard');
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

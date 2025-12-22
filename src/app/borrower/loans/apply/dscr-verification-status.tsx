@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CheckCircle, Loader2, AlertCircle, Lock, Shield } from 'lucide-react';
+import { CheckCircle, Loader2, AlertCircle, Lock, Shield, ExternalLink } from 'lucide-react';
 
 interface DscrVerificationStatusProps {
   loanApplicationId: string;
@@ -132,8 +132,19 @@ export default function DscrVerificationStatus({
             <Shield className="h-3 w-3 flex-shrink-0" />
             <span className="font-medium">zkProof Hash:</span>
           </div>
-          <p className="mt-1 break-all font-mono text-xs text-green-700">
-            {status.proofHash}
+          <a
+            href={`${process.env.NEXT_PUBLIC_CARTESI_INSPECT_URL || 'http://localhost:8080'}/inspect/zkfetch/loan_id/${loanApplicationId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 flex items-center gap-2 group"
+          >
+            <p className="break-all font-mono text-xs text-green-700 group-hover:text-blue-600 group-hover:underline transition-colors">
+              {status.proofHash}
+            </p>
+            <ExternalLink className="h-3 w-3 flex-shrink-0 text-green-600 group-hover:text-blue-600 transition-colors" />
+          </a>
+          <p className="mt-1 text-xs text-green-600 italic">
+            Click to view proof in Cartesi
           </p>
         </div>
       )}

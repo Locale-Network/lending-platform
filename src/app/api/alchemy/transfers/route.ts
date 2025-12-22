@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isValidEthereumAddress } from '@/lib/validation';
 
 /**
  * API endpoint to fetch blockchain transfers using Alchemy Transfers API
@@ -15,6 +16,22 @@ export async function GET(request: NextRequest) {
     if (!address) {
       return NextResponse.json(
         { error: 'Address parameter is required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate Ethereum address format
+    if (!isValidEthereumAddress(address)) {
+      return NextResponse.json(
+        { error: 'Invalid Ethereum address format' },
+        { status: 400 }
+      );
+    }
+
+    // Validate optional contract address if provided
+    if (contractAddress && !isValidEthereumAddress(contractAddress)) {
+      return NextResponse.json(
+        { error: 'Invalid contract address format' },
         { status: 400 }
       );
     }

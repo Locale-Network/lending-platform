@@ -3,7 +3,7 @@ import { getLoanApplication } from '@/services/db/loan-applications/borrower';
 import { PlaidApi, Transaction } from 'plaid';
 import { PlaidEnvironments } from 'plaid';
 import { Configuration } from 'plaid';
-import { getLoanAmount } from '@/services/contracts/simpleLoanPool';
+import { getLoanAmount } from '@/services/contracts/creditTreasuryPool';
 
 /**
  * API endpoint is called automatically at the end of Plaid Link flow after user's bank account is connected

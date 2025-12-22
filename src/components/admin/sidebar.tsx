@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, Waves, Plus, BarChart3, Users } from 'lucide-react';
+import { Home, Waves, Plus, BarChart3, Users, UserCheck, Shield } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 
@@ -45,6 +45,16 @@ const poolItems = [
     title: 'Investors',
     url: '/admin/investors',
     icon: Users,
+  },
+  {
+    title: 'Borrowers',
+    url: '/admin/borrowers',
+    icon: UserCheck,
+  },
+  {
+    title: 'zkFetch Logs',
+    url: '/admin/logs',
+    icon: Shield,
   },
 ];
 

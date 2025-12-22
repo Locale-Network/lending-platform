@@ -28,6 +28,7 @@ model Transaction {
   loanApplicationId String?          @map("loan_application_id")
   loanApplication   LoanApplication? @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
 
+  @@unique([loanApplicationId, transactionId]) // Prevent duplicate transactions per loan
   @@index([loanApplicationId])
   @@index([date])
   @@map("transactions")
@@ -100,6 +101,8 @@ model Account {
   investorStakes          InvestorStake[]
   notificationPreferences NotificationPreferences?
 
+  @@index([email])
+  @@index([role])
   @@map("accounts")
 }
 
@@ -205,7 +208,15 @@ model LoanApplication {
   outstandingLoans    OutstandingLoan[]
 
   // Pool funding
-  poolLoans PoolLoan[]
+  poolLoans          PoolLoan[]
+  yieldDistributions YieldDistribution[]
+
+  // Payment records (Circle ACH)
+  paymentRecords PaymentRecord[]
+
+  // zkFetch audit trail
+  zkFetchProofs ZkFetchProof[]
+  zkFetchLogs   ZkFetchLog[]
 
   // LendScore (Plaid cash-flow based credit assessment)
   lendScore              Int?      @map("lend_score") // 1-99
@@ -230,6 +241,9 @@ model LoanApplication {
   isSubmitted Boolean               @default(false) @map("is_submitted")
   status      LoanApplicationStatus @default(DRAFT) @map("status")
   amount      Float?                @default(0)
+
+  // Admin revision note (when status is ADDITIONAL_INFO_NEEDED)
+  revisionNote String? @map("revision_note") @db.Text
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -316,6 +330,15 @@ enum PoolType {
   MIXED
 }
 
+// SEC exemption types for investor eligibility
+enum ExemptionType {
+  NONE          // No exemption requirements
+  REG_D_506B    // Reg D 506(b) - max 35 non-accredited, no general solicitation
+  REG_D_506C    // Reg D 506(c) - accredited only, general solicitation allowed
+  REG_A         // Reg A - public offering with limits
+  REG_CF        // Regulation Crowdfunding
+}
+
 enum StakeStatus {
   ACTIVE
   UNSTAKING
@@ -354,6 +377,13 @@ model LoanPool {
   deployedAtBlock Int?    @map("deployed_at_block")
   isOnChain       Boolean @default(false) @map("is_on_chain")
 
+  // Exemption configuration (Reg D 506(b), etc.)
+  exemptionType               ExemptionType? @map("exemption_type")
+  eligibilityRegistryAddress  String?        @map("eligibility_registry_address") @db.VarChar(42)
+  maxNonAccreditedInvestors   Int?           @default(35) @map("max_non_accredited_investors")
+  cooldownPeriodSeconds       Int?           @map("cooldown_period_seconds") // Per-pool cooldown
+  maturityDate                DateTime?      @map("maturity_date") // When pool matures
+
   // Calculated fields (updated by backend)
   totalStaked        Float  @default(0) @map("total_staked")
   totalInvestors     Int    @default(0) @map("total_investors")
@@ -361,20 +391,88 @@ model LoanPool {
   annualizedReturn   Float? @map("annualized_return") // Actual APY
 
   // Metadata
-  imageUrl   String? @map("image_url") @db.VarChar(500)
-  isFeatured Boolean @default(false) @map("is_featured")
+  imageUrl     String?  @map("image_url") @db.VarChar(500)
+  isFeatured   Boolean  @default(false) @map("is_featured")
+  isComingSoon Boolean  @default(false) @map("is_coming_soon")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  stakes InvestorStake[]
-  loans  PoolLoan[]
+  stakes             InvestorStake[]
+  loans              PoolLoan[]
+  yieldDistributions YieldDistribution[]
+  poolTransfers      PoolTransfer[]
+  documents          PoolDocument[]
 
   @@index([slug])
   @@index([status])
   @@index([poolType])
   @@map("loan_pools")
+}
+
+// Document types for compliance documentation
+enum DocumentType {
+  PPM // Private Placement Memorandum
+  SUBSCRIPTION_AGREEMENT
+  OPERATING_AGREEMENT
+  USE_OF_FUNDS
+  RISK_DISCLOSURE
+  INVESTOR_QUESTIONNAIRE
+  ACCREDITATION_VERIFICATION
+  FINANCIAL_STATEMENTS
+  LEGAL_OPINION
+  OTHER
+}
+
+// Storage provider for decentralized document storage
+enum StorageProvider {
+  IPFS
+  ARWEAVE
+  S3 // Fallback for non-critical docs
+}
+
+// Compliance documents for investment pools
+model PoolDocument {
+  id String @id @default(cuid())
+
+  poolId String   @map("pool_id")
+  pool   LoanPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  // Document metadata
+  title       String       @db.VarChar(255)
+  description String?      @db.Text
+  documentType DocumentType @map("document_type")
+  version     String       @default("1.0") @db.VarChar(20)
+
+  // Storage information
+  storageProvider StorageProvider @map("storage_provider")
+  storageHash     String          @map("storage_hash") @db.VarChar(255) // IPFS CID or Arweave TX ID
+  storageUrl      String          @map("storage_url") @db.VarChar(500) // Full URL to document
+
+  // File metadata
+  fileName    String  @map("file_name") @db.VarChar(255)
+  fileSize    Int     @map("file_size") // Size in bytes
+  mimeType    String  @default("application/pdf") @map("mime_type") @db.VarChar(100)
+
+  // Verification & compliance
+  checksum       String?   @db.VarChar(64) // SHA-256 hash for integrity
+  isRequired     Boolean   @default(false) @map("is_required") // Required for investment
+  isPublic       Boolean   @default(true) @map("is_public") // Viewable without auth
+  effectiveDate  DateTime? @map("effective_date")
+  expirationDate DateTime? @map("expiration_date")
+
+  // Ordering and display
+  displayOrder Int @default(0) @map("display_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([poolId, documentType, version])
+  @@index([poolId])
+  @@index([documentType])
+  @@index([storageProvider])
+  @@map("pool_documents")
 }
 
 // Individual investor stakes in pools
@@ -500,6 +598,8 @@ model PendingRateChange {
 
   @@index([loanApplicationId])
   @@index([status])
+  @@index([createdAt])
+  @@index([approvedBy])
   @@map("pending_rate_changes")
 }
 
@@ -560,5 +660,229 @@ model EmailNotification {
   @@index([recipientAddress])
   @@index([scheduledFor])
   @@map("email_notifications")
+}
+
+// ============================================
+// YIELD DISTRIBUTION & POOL BRIDGING SYSTEM
+// ============================================
+
+// Track yield distributions from loan repayments to staking pool investors
+model YieldDistribution {
+  id String @id @default(cuid())
+
+  // Pool receiving the yield
+  poolId          String   @map("pool_id")
+  pool            LoanPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  contractPoolId  String?  @map("contract_pool_id") @db.VarChar(66) // bytes32 from StakingPool
+
+  // Source loan repayment
+  loanApplicationId String?          @map("loan_application_id")
+  loanApplication   LoanApplication? @relation(fields: [loanApplicationId], references: [id], onDelete: SetNull)
+
+  // Distribution details (in smallest token units, e.g., 1e6 for 1 USDC)
+  principalAmount  BigInt @map("principal_amount") // Principal portion of repayment
+  interestAmount   BigInt @map("interest_amount") // Interest portion (distributed as yield)
+  totalAmount      BigInt @map("total_amount") // Total distributed to pool
+
+  // On-chain tracking
+  sourceBlockNumber  Int     @map("source_block_number") // Block where LoanRepaymentMade was emitted
+  distributionTxHash String? @map("distribution_tx_hash") @db.VarChar(66) // distributeYield() tx
+
+  // Status tracking
+  status YieldDistributionStatus @default(PENDING)
+
+  distributedAt DateTime  @default(now()) @map("distributed_at")
+  completedAt   DateTime? @map("completed_at")
+
+  @@index([poolId])
+  @@index([loanApplicationId])
+  @@index([distributedAt])
+  @@index([status])
+  @@index([sourceBlockNumber]) // For deduplication in yield distribution
+  @@map("yield_distributions")
+}
+
+enum YieldDistributionStatus {
+  PENDING // Detected repayment, awaiting distribution
+  PROCESSING // distributeYield() called
+  COMPLETED // Successfully distributed
+  FAILED // Distribution failed
+}
+
+// Track fund transfers between StakingPool and SimpleLoanPool
+model PoolTransfer {
+  id String @id @default(cuid())
+
+  // Transfer direction
+  fromPool String @map("from_pool") @db.VarChar(50) // "staking" or "loan"
+  toPool   String @map("to_pool") @db.VarChar(50)
+
+  // Pool reference (optional - for staking pool specific transfers)
+  poolId String?   @map("pool_id")
+  pool   LoanPool? @relation(fields: [poolId], references: [id], onDelete: SetNull)
+
+  // Amount (in smallest token units)
+  amount BigInt
+
+  // On-chain tracking
+  transactionHash String @map("transaction_hash") @db.VarChar(66)
+  blockNumber     Int    @map("block_number")
+
+  // Admin who initiated the transfer
+  initiatedBy String @map("initiated_by") @db.VarChar(255)
+
+  // Status
+  status TransferStatus @default(COMPLETED)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([fromPool])
+  @@index([toPool])
+  @@index([poolId])
+  @@index([createdAt])
+  @@map("pool_transfers")
+}
+
+enum TransferStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+// Track cron job execution state for idempotency
+model IndexerState {
+  id    String @id @default("yield_distribution")
+  key   String @unique @db.VarChar(100)
+  value String @db.Text // JSON or simple value
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("indexer_state")
+}
+
+// ============================================
+// ZKFETCH LOGGING & AUDIT SYSTEM
+// ============================================
+
+// Store zkFetch proofs for audit trail, compliance, and dispute resolution
+model ZkFetchProof {
+  id String @id @default(cuid())
+
+  // Link to loan
+  loanId String @map("loan_id")
+  loan   LoanApplication @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  // Borrower info
+  borrowerAddress String @map("borrower_address") @db.VarChar(255)
+
+  // Proof identifiers
+  proofHash       String @unique @map("proof_hash") @db.VarChar(66)
+  proofIdentifier String @map("proof_identifier") @db.VarChar(255)
+
+  // Full proof data (JSON) - for disputes and verification
+  proofData Json @map("proof_data")
+
+  // Proof metadata
+  provider        String? @db.VarChar(50) // e.g., "http"
+  signaturesCount Int?    @map("signatures_count")
+
+  // Timestamps
+  createdAt  DateTime  @default(now()) @map("created_at")
+  verifiedAt DateTime? @map("verified_at") // When proof was verified on-chain
+
+  @@index([loanId])
+  @@index([borrowerAddress])
+  @@index([createdAt])
+  @@map("zkfetch_proofs")
+}
+
+// Log all zkFetch operations for debugging and monitoring
+model ZkFetchLog {
+  id String @id @default(cuid())
+
+  // Link to loan
+  loanId String @map("loan_id")
+  loan   LoanApplication @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  // Borrower info
+  borrowerAddress String @map("borrower_address") @db.VarChar(255)
+
+  // Operation details
+  action          String  @db.VarChar(20) // sync, verify, submit, relay
+  proofHash       String? @map("proof_hash") @db.VarChar(66)
+  proofIdentifier String? @map("proof_identifier") @db.VarChar(255)
+  success         Boolean @default(false)
+  durationMs      Int?    @map("duration_ms")
+
+  // Metadata
+  transactionCount Int?    @map("transaction_count")
+  dscrValue        Float?  @map("dscr_value")
+  cartesiInputHash String? @map("cartesi_input_hash") @db.VarChar(66)
+
+  // Error tracking
+  errorMessage String? @map("error_message") @db.Text
+  errorCode    String? @map("error_code") @db.VarChar(50)
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([loanId])
+  @@index([borrowerAddress])
+  @@index([action])
+  @@index([success])
+  @@index([createdAt])
+  @@map("zkfetch_logs")
+}
+
+// ============================================
+// PAYMENT PROCESSING (Circle ACH)
+// ============================================
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  PAID
+  FAILED
+}
+
+enum PaymentProvider {
+  CIRCLE
+  MANUAL
+}
+
+// Track payment records from Circle ACH
+model PaymentRecord {
+  id String @id @default(cuid())
+
+  // External payment tracking
+  externalPaymentId String  @unique @map("external_payment_id") @db.VarChar(255)
+  provider          PaymentProvider @default(CIRCLE)
+
+  // Loan association
+  loanApplicationId String          @map("loan_application_id")
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  // Payment details
+  amount   Float
+  currency String @default("USD") @db.VarChar(10)
+  status   PaymentStatus @default(PENDING)
+
+  // Timestamps for status transitions
+  confirmedAt   DateTime? @map("confirmed_at")
+  paidAt        DateTime? @map("paid_at")
+  failedAt      DateTime? @map("failed_at")
+  failureReason String?   @map("failure_reason") @db.Text
+
+  // On-chain tracking (when repayment is recorded)
+  onChainTxHash   String? @map("on_chain_tx_hash") @db.VarChar(66)
+  onChainRecorded Boolean @default(false) @map("on_chain_recorded")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([loanApplicationId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("payment_records")
 }
 

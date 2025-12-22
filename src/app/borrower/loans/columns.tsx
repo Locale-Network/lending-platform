@@ -17,14 +17,23 @@ export const columns: ColumnDef<LoanApplicationsForTable>[] = [
   {
     accessorKey: 'id',
     header: 'Application ID',
-    cell: ({ row }) => (
-      <Link
-        href={`/borrower/loans/${row.getValue('id')}`}
-        className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-sm font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10 hover:bg-blue-100 hover:text-blue-800"
-      >
-        {row.getValue('id')}
-      </Link>
-    ),
+    cell: ({ row }) => {
+      const id = row.getValue('id') as string;
+      const status = row.original.status;
+      // Draft applications link to the apply page to continue editing
+      const href = status === LoanApplicationStatus.DRAFT
+        ? `/borrower/loans/apply?applicationId=${id}`
+        : `/borrower/loans/${id}`;
+
+      return (
+        <Link
+          href={href}
+          className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-sm font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10 hover:bg-blue-100 hover:text-blue-800"
+        >
+          {id}
+        </Link>
+      );
+    },
   },
   {
     accessorKey: 'status',

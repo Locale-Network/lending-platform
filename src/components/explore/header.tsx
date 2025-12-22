@@ -31,7 +31,7 @@ export default function ExploreHeader() {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pt-6">
+    <header className="sticky top-0 z-50 w-full bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 pt-6 border-b border-border/40 transition-all duration-200">
       <div className="container flex h-24 items-center justify-between pb-4">
         {/* Left: Logo */}
         <div className="flex items-center">
@@ -42,12 +42,21 @@ export default function ExploreHeader() {
               width={220}
               height={58}
               priority
+              className="hidden md:block"
+            />
+            <Image
+              src="/locale-icon.png"
+              alt="Locale Lending"
+              width={48}
+              height={48}
+              priority
+              className="md:hidden"
             />
           </Link>
         </div>
 
         {/* Center: Navigation */}
-        <nav className="flex items-center space-x-1">
+        <nav className="flex items-center space-x-1 p-1 rounded-full bg-muted/50">
           {navItems.map((item) => {
             const isActive = pathname === item.url || (item.url !== '/explore' && pathname.startsWith(item.url));
             const Icon = item.icon;
@@ -62,7 +71,7 @@ export default function ExploreHeader() {
                 >
                   <Button
                     variant="ghost"
-                    className="gap-2"
+                    className="gap-2 rounded-full"
                   >
                     <Icon className="h-4 w-4" />
                     <span>{item.title}</span>
@@ -76,8 +85,8 @@ export default function ExploreHeader() {
                 <Button
                   variant={isActive ? 'secondary' : 'ghost'}
                   className={cn(
-                    'gap-2',
-                    isActive && 'bg-secondary'
+                    'gap-2 rounded-full transition-all duration-200',
+                    isActive && 'bg-background shadow-sm'
                   )}
                 >
                   <Icon className="h-4 w-4" />

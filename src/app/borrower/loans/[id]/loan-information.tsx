@@ -3,14 +3,15 @@
 import { useState } from 'react';
 import { LoanApplication, LoanApplicationStatus } from '@prisma/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Wallet, PercentIcon, DollarSign, TrendingUpIcon } from 'lucide-react';
+import { Wallet, PercentIcon, DollarSign, TrendingUpIcon, AlertCircle, Pencil } from 'lucide-react';
 import { getLoanStatusStyle } from '@/utils/colour';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { RepaymentModal } from '@/components/repayment-modal';
+import Link from 'next/link';
 
 interface Props {
-  loanApplication: LoanApplication;
+  loanApplication: LoanApplication & { revisionNote?: string | null };
   tokenSymbol: string;
   loanActive: boolean;
   loanAmount: number;
@@ -102,6 +103,27 @@ export default function LoanInformation({
               {repaymentProgress.toFixed(1)}% complete
             </p>
           </div>
+
+          {/* Revision Note - shown when additional info is needed */}
+          {loanApplication.status === LoanApplicationStatus.ADDITIONAL_INFO_NEEDED && (
+            <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="font-medium text-orange-800">Additional Information Needed</p>
+                  {loanApplication.revisionNote && (
+                    <p className="mt-1 text-sm text-orange-700">{loanApplication.revisionNote}</p>
+                  )}
+                </div>
+              </div>
+              <Button asChild className="w-full bg-orange-600 hover:bg-orange-700 text-white">
+                <Link href={`/borrower/loans/apply?applicationId=${loanApplication.id}`}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit Application
+                </Link>
+              </Button>
+            </div>
+          )}
 
           {/* Make a Payment Button */}
           {loanActive && repaymentProgress < 100 && (

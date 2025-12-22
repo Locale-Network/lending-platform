@@ -18,6 +18,7 @@ import {
   FileText,
   Sparkles,
   Info,
+  ExternalLink,
 } from 'lucide-react';
 
 interface DscrVerificationData {
@@ -240,10 +241,25 @@ export default function DscrVerificationCard({
 
         {/* Proof Details */}
         <div className="flex items-center justify-between border-t pt-4">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Hash className="h-3 w-3" />
-            <span>Proof: {data.proofHash?.slice(0, 16)}...</span>
-          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href={`${process.env.NEXT_PUBLIC_CARTESI_INSPECT_URL || 'http://localhost:8080'}/inspect/zkfetch/loan_id/${loanApplicationId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-xs text-muted-foreground hover:text-blue-600 hover:underline transition-colors"
+                >
+                  <Hash className="h-3 w-3" />
+                  <span>Proof: {data.proofHash?.slice(0, 16)}...</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>View verification proof in Cartesi</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Calendar className="h-3 w-3" />
             <span>

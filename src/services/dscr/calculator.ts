@@ -1,5 +1,6 @@
 import prisma from '@prisma/index';
 import { syncAndSubmitToCartesi } from '@/services/plaid/zkFetchWrapper';
+import { decryptField } from '@/lib/encryption';
 
 export interface DSCRCalculationResult {
   submitted: number;
@@ -57,7 +58,7 @@ export async function triggerDSCRCalculation(
  * 3. Submit DSCR verification to Cartesi
  */
 export async function calculateAndSubmitDSCR(loanId: string): Promise<void> {
-  // Fetch loan details
+  // Fetch loan details including tokens from plaid_item_access_tokens table
   const loan = await prisma.loanApplication.findUnique({
     where: { id: loanId },
     select: {
@@ -66,7 +67,17 @@ export async function calculateAndSubmitDSCR(loanId: string): Promise<void> {
       transactionWindowMonths: true,
       plaidAccessToken: true,
       plaidTransactionsCursor: true,
-      accountAddress: true
+      accountAddress: true,
+      // Also get tokens from the plaid_item_access_tokens table
+      plaidItemAccessToken: {
+        select: {
+          accessToken: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: 1,
+      },
     }
   });
 
@@ -74,9 +85,15 @@ export async function calculateAndSubmitDSCR(loanId: string): Promise<void> {
     throw new Error(`Loan ${loanId} not found`);
   }
 
-  if (!loan.plaidAccessToken) {
+  // Check both the direct field and the related table for access token
+  const encryptedToken = loan.plaidAccessToken || loan.plaidItemAccessToken?.[0]?.accessToken;
+
+  if (!encryptedToken) {
     throw new Error(`Loan ${loanId} has no Plaid access token`);
   }
+
+  // Decrypt the access token before use
+  const accessToken = decryptField(encryptedToken);
 
   // Get loan amount for monthly debt service calculation
   const loanAmount = loan.requestedAmount ? Number(loan.requestedAmount) : 0;
@@ -96,7 +113,7 @@ export async function calculateAndSubmitDSCR(loanId: string): Promise<void> {
   // Use zkFetch wrapper to sync transactions and submit to Cartesi
   const result = await syncAndSubmitToCartesi({
     loanId: loan.id,
-    accessToken: loan.plaidAccessToken,
+    accessToken: accessToken,
     borrowerAddress: loan.accountAddress,
     cursor: loan.plaidTransactionsCursor || undefined,
     monthlyDebtService,

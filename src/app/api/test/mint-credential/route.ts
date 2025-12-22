@@ -82,12 +82,12 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error('[Test Mint] Error:', error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: 'Minting failed',
       },
       { status: 500 }
     );

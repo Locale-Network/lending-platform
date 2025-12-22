@@ -8,7 +8,7 @@ import { getTokenDecimals, getTokenSymbol } from '@/services/contracts/token';
 import {
   getLoanPoolRemaining,
   getLoanPoolTotalLentAmount,
-} from '@/services/contracts/simpleLoanPool';
+} from '@/services/contracts/creditTreasuryPool';
 
 export default async function Page(props: {
   searchParams?: Promise<{

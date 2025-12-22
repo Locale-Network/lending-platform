@@ -36,11 +36,10 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const user = await prisma.account.findUnique({
-      where: { address: session.address },
-    });
-
-    if (user?.role !== 'ADMIN') {
+    // Use role from session (already fetched from DB in getSession)
+    // No need to query database again
+    if (session.user.role !== 'ADMIN') {
+      console.log('[Deploy] Access denied - user role:', session.user.role);
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
@@ -218,14 +217,16 @@ export async function POST(
         );
       }
 
+      // Don't expose internal error details to clients
+      console.error('[Deploy] Unhandled contract error:', error.message);
       return NextResponse.json(
-        { error: `Deployment failed: ${error.message}` },
+        { error: 'Deployment failed - please check your configuration and try again' },
         { status: 500 }
       );
     }
 
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'An unexpected error occurred' },
       { status: 500 }
     );
   }

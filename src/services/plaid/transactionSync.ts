@@ -6,6 +6,7 @@ import {
 } from 'plaid';
 import { submitInput } from '@/services/cartesi';
 import crypto from 'crypto';
+import { decryptField } from '@/lib/encryption';
 
 export interface TransactionSyncResult {
   totalLoans: number;
@@ -81,9 +82,12 @@ export async function syncTransactionsForAllLoans(): Promise<TransactionSyncResu
     // Sync transactions for each loan
     for (const loan of activeLoans) {
       try {
+        // Decrypt the access token before use
+        const decryptedToken = decryptField(loan.plaidAccessToken!);
+
         const loanResult = await syncTransactionsForLoan({
           loanId: loan.id,
-          accessToken: loan.plaidAccessToken!,
+          accessToken: decryptedToken,
           cursor: loan.plaidTransactionsCursor || undefined
         });
 

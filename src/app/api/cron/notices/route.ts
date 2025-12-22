@@ -1,8 +1,12 @@
-import { updateLoanInterestRate } from '@/services/contracts/simpleLoanPool';
+import { updateLoanInterestRate } from '@/services/contracts/creditTreasuryPool';
 import { checkNotice, getLastProcessedIndex, markNoticeProcessed } from '@/services/db/notices';
 import prisma from '@prisma/index';
 import { NextResponse } from 'next/server';
 import { NextRequest } from 'next/server';
+import { validateCronSecret } from '@/lib/rate-limit';
+import { cronLogger } from '@/lib/logger';
+
+const log = cronLogger.child({ job: 'notice-processor' });
 
 export interface NoticePayload {
   loanId: string;
@@ -10,8 +14,8 @@ export interface NoticePayload {
 }
 
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('Authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Use standardized cron validation
+  if (!validateCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -19,8 +23,7 @@ export async function GET(req: NextRequest) {
   const requireApproval = process.env.REQUIRE_RATE_APPROVAL !== 'false'; // Default to true
   const alertThreshold = parseFloat(process.env.RATE_CHANGE_ALERT_THRESHOLD || '2.0');
 
-  console.log('[Notice Processor] Starting, last processed:', lastProcessedIndex);
-  console.log('[Notice Processor] Approval required:', requireApproval);
+  log.info({ lastProcessedIndex, requireApproval }, 'Starting notice processor');
 
   try {
     // Base64 encode the index number for the cursor
@@ -76,14 +79,14 @@ export async function GET(req: NextRequest) {
     });
 
     if (!response.ok) {
-      console.error('Failed to fetch notices', response);
+      log.error({ status: response.status }, 'Failed to fetch notices');
       return NextResponse.json({ success: false }, { status: 500 });
     }
 
     const result = await response.json();
 
     if (result.errors) {
-      console.error('Failed to fetch notices', result.errors);
+      log.error({ errors: result.errors }, 'Failed to fetch notices');
       return NextResponse.json({ success: false }, { status: 500 });
     }
 
@@ -102,7 +105,7 @@ export async function GET(req: NextRequest) {
       const decodedString = Buffer.from(payload.slice(2), 'hex').toString('utf8');
       const decodedPayload: NoticePayload = JSON.parse(decodedString);
 
-      console.log(`[Notice Processor] Processing notice for loan ${decodedPayload.loanId}, rate: ${decodedPayload.interestRate}`);
+      log.info({ loanId: decodedPayload.loanId, rate: decodedPayload.interestRate }, 'Processing notice');
 
       // Fetch current loan details
       const loan = await prisma.loanApplication.findUnique({
@@ -122,7 +125,7 @@ export async function GET(req: NextRequest) {
       });
 
       if (!loan) {
-        console.error(`[Notice Processor] Loan ${decodedPayload.loanId} not found`);
+        log.error({ loanId: decodedPayload.loanId }, 'Loan not found');
         continue;
       }
 
@@ -157,12 +160,12 @@ export async function GET(req: NextRequest) {
           }
         });
 
-        console.log(`[Notice Processor] Rate change pending approval: ${currentRate} -> ${proposedRate} (${rateChangePct.toFixed(2)}%)`);
+        log.info({ currentRate, proposedRate, rateChangePct: rateChangePct.toFixed(2) }, 'Rate change pending approval');
         pendingApprovalCount++;
 
         // TODO: Send notification to admin if rate change exceeds threshold
         if (Math.abs(rateChangePct) >= alertThreshold) {
-          console.warn(`[Notice Processor] ⚠️  Rate change exceeds alert threshold (${alertThreshold}%): ${rateChangePct.toFixed(2)}%`);
+          log.warn({ alertThreshold, rateChangePct: rateChangePct.toFixed(2) }, 'Rate change exceeds alert threshold');
           // TODO: Send email/Slack notification
         }
 
@@ -174,11 +177,11 @@ export async function GET(req: NextRequest) {
         );
 
         if (!result.success) {
-          console.error(`[Notice Processor] Failed to update loan ${decodedPayload.loanId}: ${result.error}`);
+          log.error({ loanId: decodedPayload.loanId, error: result.error }, 'Failed to update loan');
           continue;
         }
 
-        console.log(`[Notice Processor] Auto-applied rate change: ${currentRate} -> ${proposedRate}, txHash: ${result.txHash}`);
+        log.info({ currentRate, proposedRate, txHash: result.txHash }, 'Auto-applied rate change');
         autoAppliedCount++;
 
         // Log as executed with transaction hash
@@ -199,7 +202,7 @@ export async function GET(req: NextRequest) {
       processedCount++;
     }
 
-    console.log(`[Notice Processor] Complete: ${processedCount} notices processed, ${pendingApprovalCount} pending approval, ${autoAppliedCount} auto-applied`);
+    log.info({ processedCount, pendingApprovalCount, autoAppliedCount }, 'Notice processor complete');
 
     return NextResponse.json({
       success: true,
@@ -208,7 +211,7 @@ export async function GET(req: NextRequest) {
       autoAppliedCount
     });
   } catch (e) {
-    console.error(e);
+    log.error({ err: e }, 'Notice processor failed');
   }
 
   return NextResponse.json({ success: false }, { status: 500 });

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import RichTextEditor from '@/components/ui/rich-text-editor';
 import {
   AlertTriangle,
@@ -22,6 +23,9 @@ import {
   ExternalLink,
   Loader2,
   AlertCircle,
+  FileText,
+  Sparkles,
+  Eye,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -172,7 +176,6 @@ export default function ManagePoolPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-muted-foreground">Loading pool...</span>
       </div>
     );
   }
@@ -801,6 +804,107 @@ export default function ManagePoolPage() {
               </AlertDescription>
             </Alert>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Coming Soon Promotion - Only for DRAFT pools */}
+      {pool.status === 'DRAFT' && (
+        <Card className={pool.isComingSoon ? 'border-purple-200 bg-purple-50/50' : ''}>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Sparkles className={`h-5 w-5 ${pool.isComingSoon ? 'text-purple-600' : 'text-muted-foreground'}`} />
+              <CardTitle>Public Preview (Coming Soon)</CardTitle>
+            </div>
+            <CardDescription>
+              Show this DRAFT pool on the public Explore page as "Coming Soon" for promotional purposes
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex-1">
+                <p className="font-semibold">Enable Coming Soon Preview</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  When enabled, this pool will appear on the Explore page with a "Coming Soon" badge.
+                  Investors can view pool details but cannot stake until the pool is activated.
+                </p>
+              </div>
+              <Switch
+                checked={pool.isComingSoon}
+                onCheckedChange={async (checked) => {
+                  try {
+                    const response = await fetch(`/api/pools/${poolId}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ isComingSoon: checked }),
+                    });
+                    if (!response.ok) {
+                      const errorData = await response.json();
+                      throw new Error(errorData.error || 'Failed to update coming soon status');
+                    }
+                    mutate(`/api/pools/${poolId}`);
+                    setSaveSuccess(true);
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : 'Failed to update coming soon status');
+                  }
+                }}
+              />
+            </div>
+
+            {pool.isComingSoon && (
+              <div className="flex items-start gap-3 p-4 bg-purple-100 rounded-lg border border-purple-200">
+                <Eye className="h-5 w-5 text-purple-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-medium text-purple-900">Public Preview Active</p>
+                  <p className="text-sm text-purple-700 mt-1">
+                    This pool is now visible on the public Explore page with a "Coming Soon" badge.
+                    When you activate this pool, the Coming Soon status will be automatically removed.
+                  </p>
+                  <Link href={`/explore/pools/${pool.slug}`} target="_blank" className="inline-block mt-2">
+                    <Button variant="outline" size="sm" className="border-purple-300 text-purple-700 hover:bg-purple-100">
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      View Public Preview
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {!pool.isComingSoon && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Enable this option to promote your pool before launch. The pool will appear on the Explore page
+                  with a "Coming Soon" badge, allowing potential investors to preview the opportunity.
+                </AlertDescription>
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Compliance Documents */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-primary" />
+            <CardTitle>Compliance Documents</CardTitle>
+          </div>
+          <CardDescription>Manage PPM, subscription agreements, and other compliance documents</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Upload and manage compliance documents that investors will see on the pool's documents page.
+              </p>
+            </div>
+            <Link href={`/admin/pools/${poolId}/documents`}>
+              <Button>
+                <FileText className="mr-2 h-4 w-4" />
+                Manage Documents
+              </Button>
+            </Link>
+          </div>
         </CardContent>
       </Card>
 

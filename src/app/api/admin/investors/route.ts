@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/authorization';
 import prisma from '@prisma/index';
+import { logger } from '@/lib/logger';
+
+const log = logger.child({ module: 'admin-investors' });
 
 // GET /api/admin/investors - Get all investors with their stakes and stats
 export async function GET(request: NextRequest) {
@@ -14,17 +17,37 @@ export async function GET(request: NextRequest) {
     // Check if user is admin
     const user = await prisma.account.findUnique({
       where: { address: session.address },
+      select: { role: true },
     });
 
     if (user?.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
-    // Get all accounts that have stakes (investors)
+    // Parse pagination parameters
+    const searchParams = request.nextUrl.searchParams;
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
+    const skip = (page - 1) * limit;
+
+    // Get all accounts that have stakes (investors) with selective fields
     const investorStakes = await prisma.investorStake.findMany({
-      include: {
-        pool: true,
-        investor: true,
+      select: {
+        investorAddress: true,
+        stakedAmount: true,
+        earnedInterest: true,
+        status: true,
+        stakedAt: true,
+        pool: {
+          select: {
+            annualizedReturn: true,
+          },
+        },
+        investor: {
+          select: {
+            email: true,
+          },
+        },
       },
     });
 
@@ -103,15 +126,26 @@ export async function GET(request: NextRequest) {
     // Sort by total invested (descending)
     investors.sort((a, b) => b.totalInvested - a.totalInvested);
 
-    // Calculate summary stats
+    // Calculate summary stats (from all investors)
     const totalInvestors = investors.length;
     const totalInvested = investors.reduce((sum, inv) => sum + inv.totalInvested, 0);
     const totalReturns = investors.reduce((sum, inv) => sum + inv.totalReturns, 0);
     const avgInvestment = totalInvestors > 0 ? totalInvested / totalInvestors : 0;
     const verifiedCount = investors.filter(i => i.verified).length;
 
+    // Apply pagination
+    const paginatedInvestors = investors.slice(skip, skip + limit);
+    const totalPages = Math.ceil(totalInvestors / limit);
+
     return NextResponse.json({
-      investors,
+      investors: paginatedInvestors,
+      pagination: {
+        page,
+        limit,
+        total: totalInvestors,
+        totalPages,
+        hasMore: page < totalPages,
+      },
       summary: {
         totalInvestors,
         totalInvested,
@@ -121,7 +155,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error fetching investors:', error);
+    log.error({ err: error }, 'Error fetching investors');
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

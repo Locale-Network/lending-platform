@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
 import { Role } from '@prisma/client';
+import LoadingDots from '@/components/ui/loading-dots';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -252,18 +252,9 @@ export default function AuthGuard({
   }
 
   if (!authComplete) {
-    const loadingMessage = authenticated && !address
-      ? 'Setting up your wallet...'
-      : isSyncing
-        ? 'Syncing account...'
-        : 'Verifying authentication...';
-
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">{loadingMessage}</p>
-        </div>
+        <LoadingDots size="md" />
       </div>
     );
   }

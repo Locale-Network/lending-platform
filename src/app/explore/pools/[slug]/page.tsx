@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { StatusIndicator } from '@/components/ui/status-indicator';
 import {
   TrendingUp,
   Users,
@@ -25,7 +26,11 @@ import {
   ArrowDownLeft,
   Clock,
   Activity,
+  FileText,
+  Sparkles,
 } from 'lucide-react';
+import LoadingDots from '@/components/ui/loading-dots';
+import { HoldToConfirmButton } from '@/components/ui/hold-to-confirm-button';
 import Link from 'next/link';
 import useSWR from 'swr';
 import { useToast } from '@/hooks/use-toast';
@@ -394,8 +399,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-muted-foreground">Loading pool details...</span>
+        <LoadingDots size="md" />
       </div>
     );
   }
@@ -425,11 +429,29 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
     );
   }
 
+  // Check if this is a Coming Soon pool
+  const isComingSoon = poolData.isComingSoon === true;
+
   return (
     <div className="space-y-8 p-8">
+      {/* Coming Soon Banner */}
+      {isComingSoon && (
+        <div className="bg-purple-100 border border-purple-300 rounded-xl p-4 flex items-center gap-3 animate-fade-in-up">
+          <div className="flex-shrink-0 p-2 bg-purple-200 rounded-full">
+            <Sparkles className="h-5 w-5 text-purple-700" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-purple-900">Coming Soon</h3>
+            <p className="text-sm text-purple-700">
+              This pool is launching soon. Investment will be available once the pool is activated.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Breadcrumb */}
-      <div className="text-sm text-muted-foreground">
-        <Link href="/explore/pools" className="hover:underline">
+      <div className="text-sm text-muted-foreground animate-fade-in-up">
+        <Link href="/explore/pools" className="hover:underline hover:text-primary transition-colors">
           All Pools
         </Link>
         {' / '}
@@ -441,65 +463,103 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
         {/* Main Content - 2 columns */}
         <div className="lg:col-span-2 space-y-6">
           {/* Pool Header */}
-          <div>
+          <div className="animate-fade-in-up">
             <div className="flex items-center gap-3 mb-3">
               <h1 className="text-2xl font-bold">{poolData.name}</h1>
-              <Badge className="bg-green-100 text-green-800">
-                {poolData.status}
-              </Badge>
+              {isComingSoon ? (
+                <Badge className="bg-purple-500 text-white flex items-center gap-1.5">
+                  <Sparkles className="h-3 w-3" />
+                  Coming Soon
+                </Badge>
+              ) : (
+                <Badge className="bg-green-100 text-green-800 flex items-center gap-1.5">
+                  <StatusIndicator status={poolData.status === 'ACTIVE' ? 'active' : 'pending'} size="sm" />
+                  {poolData.status}
+                </Badge>
+              )}
             </div>
             <div className="text-base text-muted-foreground" dangerouslySetInnerHTML={{ __html: poolData.description || '' }} />
           </div>
 
           {/* Key Metrics Cards */}
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card>
+          <div className="grid gap-4 md:grid-cols-3 animate-fade-in-stagger">
+            <Card variant="elevated" className="bg-gradient-subtle">
               <CardHeader className="pb-2">
-                <CardDescription>Current APY</CardDescription>
+                <CardDescription>{isComingSoon ? 'Target APY' : 'Current APY'}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-green-600">{poolData.annualizedReturn?.toFixed(1) || 'N/A'}%</div>
-                <p className="text-xs text-muted-foreground mt-1">Annual percentage yield</p>
+                {isComingSoon ? (
+                  <>
+                    <div className="text-3xl font-bold text-purple-600">TBD</div>
+                    <p className="text-xs text-muted-foreground mt-1">To be determined</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-3xl font-bold text-green-600">{poolData.annualizedReturn?.toFixed(1) || 'N/A'}<span className="text-xl">%</span></div>
+                    <p className="text-xs text-muted-foreground mt-1">Annual percentage yield</p>
+                  </>
+                )}
               </CardContent>
             </Card>
 
-            <Card>
+            <Card variant="elevated" className="bg-gradient-subtle">
               <CardHeader className="pb-2">
-                <CardDescription>Total Value Locked</CardDescription>
+                <CardDescription>{isComingSoon ? 'Target Size' : 'Total Value Locked'}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
-                  {((poolData.totalStaked || 0) / 1000000).toFixed(2)}M USDC
-                </div>
-                <Progress value={targetProgress} className="mt-2 h-1" />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {targetProgress.toFixed(0)}% of {((poolData.poolSize || 0) / 1000000).toFixed(1)}M USDC target
-                </p>
+                {isComingSoon ? (
+                  <>
+                    <div className="text-2xl font-bold text-muted-foreground">
+                      {poolData.poolSize ? `${((poolData.poolSize) / 1000000).toFixed(1)}M` : 'TBD'} <span className="text-lg text-muted-foreground">USDC</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">Target pool size</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">
+                      {((poolData.totalStaked || 0) / 1000000).toFixed(2)}M <span className="text-lg text-muted-foreground">USDC</span>
+                    </div>
+                    <Progress variant="gradient" value={targetProgress} className="mt-2 h-1.5" />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {targetProgress.toFixed(0)}% of {((poolData.poolSize || 0) / 1000000).toFixed(1)}M target
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
 
-            <Card>
+            <Card variant="elevated" className="bg-gradient-subtle">
               <CardHeader className="pb-2">
-                <CardDescription>Available Liquidity</CardDescription>
+                <CardDescription>{isComingSoon ? 'Status' : 'Available Liquidity'}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
-                  {((poolData.availableLiquidity || 0) / 1000).toFixed(0)}K USDC
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {utilizationRate.toFixed(0)}% utilized
-                </p>
+                {isComingSoon ? (
+                  <>
+                    <div className="text-2xl font-bold text-purple-600">Launching Soon</div>
+                    <p className="text-xs text-muted-foreground mt-1">Stay tuned for updates</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">
+                      {((poolData.availableLiquidity || 0) / 1000).toFixed(0)}K <span className="text-lg text-muted-foreground">USDC</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {utilizationRate.toFixed(0)}% utilized
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
 
           {/* Tabs for Detailed Info */}
           <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="performance">Performance</TabsTrigger>
               <TabsTrigger value="loans">Active Loans</TabsTrigger>
               <TabsTrigger value="terms">Terms & Fees</TabsTrigger>
+              <TabsTrigger value="documents">Documents</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -508,16 +568,16 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                   <CardTitle>Pool Strategy</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <p className="text-muted-foreground">
-                    This pool invests in small businesses with annual revenues between $500K-$5M. We focus
-                    on companies with:
-                  </p>
-                  <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>Minimum 2 years of operating history</li>
-                    <li>Positive cash flow for the last 12 months</li>
-                    <li>Credit scores above {poolData.minCreditScore || 650}</li>
-                    <li>Clear business expansion or working capital needs</li>
-                  </ul>
+                  {poolData.description ? (
+                    <div
+                      className="prose prose-sm max-w-none text-muted-foreground"
+                      dangerouslySetInnerHTML={{ __html: poolData.description }}
+                    />
+                  ) : (
+                    <p className="text-muted-foreground">
+                      No description provided for this pool.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 
@@ -602,6 +662,54 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                       <Label>Withdrawal Period</Label>
                       <p className="text-2xl font-bold">7 days</p>
                       <p className="text-xs text-muted-foreground">Unstaking cooldown period</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="documents" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    Compliance Documents
+                  </CardTitle>
+                  <CardDescription>
+                    Review all required legal and compliance documentation before investing
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    This pool operates under SEC Regulation D Rule 506(b) exemption. All offering documents
+                    are stored on decentralized networks (IPFS/Arweave) for transparency and immutability.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Link href={`/explore/pools/${resolvedParams.slug}/documents`} className="flex-1">
+                      <Button className="w-full" size="lg">
+                        <FileText className="h-4 w-4 mr-2" />
+                        View All Documents
+                      </Button>
+                    </Link>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 pt-4">
+                    <div className="flex items-center gap-3 p-3 rounded-lg border">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <Shield className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">Private Placement Memo</p>
+                        <p className="text-xs text-muted-foreground">Investment terms & risks</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 rounded-lg border">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <DollarSign className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">Use of Funds</p>
+                        <p className="text-xs text-muted-foreground">Capital allocation details</p>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -733,39 +841,29 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                   {userStakeData.hasPendingUnstake ? (
                     <div className="space-y-2">
                       {userStakeData.canWithdrawNow ? (
-                        <Button
-                          className="w-full bg-green-600 hover:bg-green-700"
-                          onClick={handleCompleteUnstake}
+                        <HoldToConfirmButton
+                          onConfirm={handleCompleteUnstake}
+                          duration={2000}
                           disabled={isCompletingUnstake}
+                          loading={isCompletingUnstake}
+                          variant="success"
+                          size="sm"
+                          className="w-full"
                         >
-                          {isCompletingUnstake ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Withdrawing...
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle className="mr-2 h-4 w-4" />
-                              Complete Withdrawal
-                            </>
-                          )}
-                        </Button>
+                          Hold to Withdraw
+                        </HoldToConfirmButton>
                       ) : null}
-                      <Button
-                        variant="outline"
-                        className="w-full border-yellow-600 text-yellow-700 hover:bg-yellow-100"
-                        onClick={handleCancelUnstake}
+                      <HoldToConfirmButton
+                        onConfirm={handleCancelUnstake}
+                        duration={1500}
                         disabled={isCancellingUnstake}
+                        loading={isCancellingUnstake}
+                        variant="warning"
+                        size="sm"
+                        className="w-full"
                       >
-                        {isCancellingUnstake ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Cancelling...
-                          </>
-                        ) : (
-                          'Cancel & Restake'
-                        )}
-                      </Button>
+                        Hold to Cancel & Restake
+                      </HoldToConfirmButton>
                     </div>
                   ) : (
                     <Button
@@ -780,109 +878,134 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
               </Card>
             )}
 
-            {/* Stake Action Card */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Stake in This Pool</CardTitle>
-                <CardDescription>Enter amount to calculate returns</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Token Balance Display */}
-                {isConnected && balance !== undefined && (
-                  <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                    <span className="text-sm text-muted-foreground">Your Balance:</span>
-                    <span className="font-semibold">
-                      {Number(formatUnits(balance, 6)).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC
-                    </span>
+            {/* Stake Action Card - Show disabled state for Coming Soon pools */}
+            {isComingSoon ? (
+              <Card variant="elevated" className="border-purple-200 bg-purple-50/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-purple-900">
+                    <Sparkles className="h-5 w-5" />
+                    Coming Soon
+                  </CardTitle>
+                  <CardDescription>This pool is not yet accepting investments</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="p-4 bg-purple-100 rounded-lg border border-purple-200">
+                    <p className="text-sm text-purple-800">
+                      This pool is currently being prepared for launch. Investment will be available once the pool is activated.
+                    </p>
                   </div>
-                )}
-
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <Label htmlFor="stakeAmount">Amount (USDC)</Label>
-                    {isConnected && balance && (
-                      <Button
-                        variant="link"
-                        className="h-auto p-0 text-xs"
-                        onClick={() => setStakeAmount(formatUnits(balance, 6))}
-                      >
-                        Use Max
-                      </Button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="stakeAmount"
-                      type="number"
-                      placeholder={`Min. ${poolData.minimumStake || 100}`}
-                      className="pl-9"
-                      value={stakeAmount}
-                      onChange={e => setStakeAmount(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                {/* Estimated Returns */}
-                {stakeAmount && parseFloat(stakeAmount) >= (poolData.minimumStake || 100) && (
-                  <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-blue-700">Estimated Shares</span>
-                      <span className="font-semibold text-blue-900">
-                        {estimatedShares.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </span>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-purple-600" />
+                      <span>Pool details being finalized</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-blue-700">Est. Annual Return</span>
-                      <span className="font-semibold text-green-600">
-                        {estimatedAnnualReturn.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-blue-700">Est. Monthly Return</span>
-                      <span className="font-semibold text-green-600">
-                        {estimatedMonthlyReturn.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC
-                      </span>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-purple-600" />
+                      <span>Launch announcement coming soon</span>
                     </div>
                   </div>
-                )}
-
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={handleStake}
-                  disabled={
-                    !stakeAmount ||
-                    parseFloat(stakeAmount) < (poolData.minimumStake || 100) ||
-                    isStaking ||
-                    !isConnected
-                  }
-                >
-                  {isStaking ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {stakingStep === 'approving' ? 'Approving...' : 'Staking...'}
-                    </>
-                  ) : (
-                    <>
-                      <Wallet className="mr-2 h-4 w-4" />
-                      {isConnected ? 'Stake Now' : 'Connect Wallet to Stake'}
-                    </>
+                  <Button disabled className="w-full" size="lg">
+                    Investment Coming Soon
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card variant="elevated">
+                <CardHeader>
+                  <CardTitle>Stake in This Pool</CardTitle>
+                  <CardDescription>Enter amount to calculate returns</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Token Balance Display */}
+                  {isConnected && balance !== undefined && (
+                    <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                      <span className="text-sm text-muted-foreground">Your Balance:</span>
+                      <span className="font-semibold">
+                        {Number(formatUnits(balance, 6)).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC
+                      </span>
+                    </div>
                   )}
-                </Button>
 
-                {/* Info Notice */}
-                <div className="flex items-start gap-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                  <Info className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-yellow-800">
-                    Your funds will be locked in the pool. Withdrawals have a 7-day cooldown period.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <Label htmlFor="stakeAmount">Amount (USDC)</Label>
+                      {isConnected && balance && (
+                        <Button
+                          variant="link"
+                          className="h-auto p-0 text-xs"
+                          onClick={() => setStakeAmount(formatUnits(balance, 6))}
+                        >
+                          Use Max
+                        </Button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="stakeAmount"
+                        type="number"
+                        placeholder={`Min. ${poolData.minimumStake || 100}`}
+                        className="pl-9"
+                        value={stakeAmount}
+                        onChange={e => setStakeAmount(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Estimated Returns */}
+                  {stakeAmount && parseFloat(stakeAmount) >= (poolData.minimumStake || 100) && (
+                    <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-blue-700">Estimated Shares</span>
+                        <span className="font-semibold text-blue-900">
+                          {estimatedShares.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-blue-700">Est. Annual Return</span>
+                        <span className="font-semibold text-green-600">
+                          {estimatedAnnualReturn.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-blue-700">Est. Monthly Return</span>
+                        <span className="font-semibold text-green-600">
+                          {estimatedMonthlyReturn.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <HoldToConfirmButton
+                    onConfirm={handleStake}
+                    duration={1500}
+                    disabled={
+                      !stakeAmount ||
+                      parseFloat(stakeAmount) < (poolData.minimumStake || 100) ||
+                      isStaking ||
+                      !isConnected
+                    }
+                    loading={isStaking}
+                    variant="success"
+                    size="lg"
+                    className="w-full"
+                  >
+                    {isConnected ? 'Hold to Stake' : 'Connect Wallet to Stake'}
+                  </HoldToConfirmButton>
+
+                  {/* Info Notice */}
+                  <div className="flex items-start gap-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <Info className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-yellow-800">
+                      Your funds will be locked in the pool. Withdrawals have a 7-day cooldown period.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Pool Stats Card */}
-            <Card>
+            <Card variant="elevated">
               <CardHeader>
                 <CardTitle className="text-base">Pool Statistics</CardTitle>
               </CardHeader>
@@ -892,14 +1015,18 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                     <Users className="h-4 w-4" />
                     Total Investors
                   </span>
-                  <span className="font-semibold">{poolData.totalInvestors || 0}</span>
+                  <span className="font-semibold">
+                    {isComingSoon ? '—' : (poolData.totalInvestors || 0)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground flex items-center gap-2">
                     <TrendingUp className="h-4 w-4" />
-                    Utilization Rate
+                    {isComingSoon ? 'Status' : 'Utilization Rate'}
                   </span>
-                  <span className="font-semibold">{utilizationRate.toFixed(1)}%</span>
+                  <span className={`font-semibold ${isComingSoon ? 'text-purple-600' : ''}`}>
+                    {isComingSoon ? 'Preparing' : `${utilizationRate.toFixed(1)}%`}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground flex items-center gap-2">
@@ -928,8 +1055,8 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
 
       {/* Stake Confirmation Modal */}
       {showStakeModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="max-w-md w-full m-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in-up">
+          <Card variant="glass" className="max-w-md w-full m-4 shadow-soft-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-green-600" />
@@ -968,8 +1095,8 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
 
       {/* Unstake Modal */}
       {showUnstakeModal && userStakeData && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="max-w-md w-full m-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in-up">
+          <Card variant="glass" className="max-w-md w-full m-4 shadow-soft-lg">
             <CardHeader>
               <CardTitle>Unstake Funds</CardTitle>
               <CardDescription>
@@ -1034,25 +1161,22 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                 >
                   Cancel
                 </Button>
-                <Button
-                  className="flex-1 bg-red-600 hover:bg-red-700"
-                  onClick={handleUnstake}
+                <HoldToConfirmButton
+                  onConfirm={handleUnstake}
+                  duration={2000}
                   disabled={
                     isUnstaking ||
                     !unstakeAmount ||
                     parseFloat(unstakeAmount) <= 0 ||
                     parseFloat(unstakeAmount) > userStakeData.amount
                   }
+                  loading={isUnstaking}
+                  variant="destructive"
+                  size="md"
+                  className="flex-1"
                 >
-                  {isUnstaking ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Unstaking...
-                    </>
-                  ) : (
-                    'Confirm Unstake'
-                  )}
-                </Button>
+                  Hold to Confirm Unstake
+                </HoldToConfirmButton>
               </div>
             </CardContent>
           </Card>

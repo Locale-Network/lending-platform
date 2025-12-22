@@ -155,9 +155,8 @@ function AccountSettings() {
         <div className="space-y-2">
           <Label htmlFor="email">Email Address</Label>
           {isLoadingDbEmail ? (
-            <div className="flex items-center gap-2 h-10">
+            <div className="flex items-center h-10">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm text-muted-foreground">Loading...</span>
             </div>
           ) : isEditingEmail ? (
             <div className="space-y-3">
@@ -386,7 +385,7 @@ function InvestorVerificationSettings() {
             <ShieldCheck className="h-5 w-5" />
             <CardTitle>Investor Verification</CardTitle>
           </div>
-          <CardDescription>Loading verification status...</CardDescription>
+          <CardDescription></CardDescription>
         </CardHeader>
         <CardContent>
           <Skeleton className="h-24 w-full" />

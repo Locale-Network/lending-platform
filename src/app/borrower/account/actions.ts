@@ -157,3 +157,38 @@ export const createKycVerificationRecord = async (
 
   revalidatePath('/borrower/loans/apply');
 };
+
+import prisma from '@prisma/index';
+
+interface GetBorrowerNFTResponse {
+  isError: boolean;
+  errorMessage?: string;
+  tokenId?: string | null;
+}
+
+export async function getBorrowerNFTTokenId(
+  accountAddress: string
+): Promise<GetBorrowerNFTResponse> {
+  try {
+    await validateBorrowerRequest(accountAddress);
+
+    const account = await prisma.account.findUnique({
+      where: { address: accountAddress.toLowerCase() },
+      select: { borrowerNFTTokenId: true },
+    });
+
+    return {
+      isError: false,
+      tokenId: account?.borrowerNFTTokenId ?? null,
+    };
+  } catch (error: any) {
+    if (error?.digest?.startsWith('NEXT_REDIRECT')) {
+      throw error;
+    }
+    console.error('Error getting borrower NFT token ID:', error);
+    return {
+      isError: true,
+      errorMessage: 'Error fetching borrower credential',
+    };
+  }
+}

@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@prisma/index';
+import { logger } from '@/lib/logger';
+
+const log = logger.child({ module: 'pool-public-detail' });
 
 // GET /api/pools/public/[slug] - Get single pool by slug (public endpoint)
 export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   try {
     const { slug } = await params;
-    const pool = await prisma.loanPool.findUnique({
+
+    // Find pool that is either ACTIVE or Coming Soon (DRAFT with isComingSoon)
+    const pool = await prisma.loanPool.findFirst({
       where: {
         slug,
-        status: 'ACTIVE', // Only show active pools
+        OR: [
+          { status: 'ACTIVE' },
+          { status: 'DRAFT', isComingSoon: true },
+        ],
       },
       select: {
         id: true,
@@ -33,6 +41,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         annualizedReturn: true,
         imageUrl: true,
         isFeatured: true,
+        isComingSoon: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -44,7 +53,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     return NextResponse.json(pool);
   } catch (error) {
-    console.error('Error fetching pool:', error);
+    log.error({ err: error }, 'Error fetching pool');
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
