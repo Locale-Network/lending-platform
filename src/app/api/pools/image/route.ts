@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadPoolImage } from '@/lib/supabase/storage';
-import { getAuthUser } from '@/lib/auth/authorization';
+import { requireAdmin } from '@/lib/auth/authorization';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -8,10 +8,7 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 export async function POST(request: NextRequest) {
   try {
     // Verify admin authentication
-    const user = await getAuthUser();
-    if (!user || user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    await requireAdmin();
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
@@ -55,9 +52,11 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Image upload error:', error);
+    const message = error instanceof Error ? error.message : 'Upload failed';
+    const isAuthError = message.includes('Unauthorized') || message.includes('Authentication');
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Upload failed' },
-      { status: 500 }
+      { error: message },
+      { status: isAuthError ? 401 : 500 }
     );
   }
 }
