@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
-import { ArrowLeft, ArrowRight, Check, Loader2, AlertCircle, ExternalLink, Rocket } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Loader2, AlertCircle, ExternalLink, Rocket, Upload, X } from 'lucide-react';
 import Link from 'next/link';
 import RichTextEditor from '@/components/ui/rich-text-editor';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -35,6 +35,7 @@ export default function CreatePoolPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedPoolId, setSavedPoolId] = useState<string | null>(null);
   const [deploymentResult, setDeploymentResult] = useState<{
@@ -329,42 +330,85 @@ export default function CreatePoolPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="imageUrl">Pool Image URL (optional)</Label>
-                  <Input
-                    id="imageUrl"
-                    type="url"
-                    placeholder="https://images.unsplash.com/photo-..."
-                    value={formData.imageUrl}
-                    onChange={e => handleInputChange('imageUrl', e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Paste a URL from Unsplash, Imgur, or other image hosting service
-                  </p>
+                  <Label>Pool Image (optional)</Label>
 
-                  {/* Image Preview */}
-                  {formData.imageUrl && (
-                    <div className="mt-3 space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Preview:</p>
-                      <div className="relative w-full h-32 rounded-lg border overflow-hidden bg-muted">
-                        <img
-                          src={formData.imageUrl}
-                          alt="Pool preview"
-                          className="w-full h-full object-cover"
-                          onError={e => {
-                            e.currentTarget.style.display = 'none';
-                            const errorDiv = e.currentTarget.nextElementSibling as HTMLElement;
-                            if (errorDiv) errorDiv.classList.remove('hidden');
-                          }}
-                          onLoad={e => {
-                            e.currentTarget.style.display = 'block';
-                            const errorDiv = e.currentTarget.nextElementSibling as HTMLElement;
-                            if (errorDiv) errorDiv.classList.add('hidden');
-                          }}
-                        />
-                        <div className="hidden absolute inset-0 flex items-center justify-center text-sm text-muted-foreground bg-muted">
-                          Failed to load image
-                        </div>
-                      </div>
+                  {/* Image Upload */}
+                  {!formData.imageUrl ? (
+                    <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary/50 transition-colors">
+                      <input
+                        type="file"
+                        id="poolImage"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+
+                          if (file.size > 5 * 1024 * 1024) {
+                            setError('Image must be less than 5MB');
+                            return;
+                          }
+
+                          setIsUploadingImage(true);
+                          setError(null);
+
+                          try {
+                            const uploadFormData = new FormData();
+                            uploadFormData.append('file', file);
+                            uploadFormData.append('poolId', formData.slug || 'temp-' + Date.now());
+
+                            const response = await fetch('/api/pools/image', {
+                              method: 'POST',
+                              body: uploadFormData,
+                            });
+
+                            const result = await response.json();
+
+                            if (!response.ok) {
+                              throw new Error(result.error || 'Upload failed');
+                            }
+
+                            handleInputChange('imageUrl', result.imageUrl);
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : 'Failed to upload image');
+                          } finally {
+                            setIsUploadingImage(false);
+                          }
+                        }}
+                      />
+                      <label htmlFor="poolImage" className="cursor-pointer">
+                        {isUploadingImage ? (
+                          <div className="flex flex-col items-center gap-2">
+                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">Uploading...</span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center gap-2">
+                            <Upload className="h-8 w-8 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">
+                              Click to upload pool image
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              JPEG, PNG, or WebP up to 5MB
+                            </span>
+                          </div>
+                        )}
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="relative w-full h-40 rounded-lg border overflow-hidden bg-muted">
+                      <img
+                        src={formData.imageUrl}
+                        alt="Pool preview"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleInputChange('imageUrl', '')}
+                        className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-black/70 rounded-full text-white transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
                     </div>
                   )}
                 </div>

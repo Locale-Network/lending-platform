@@ -49,34 +49,6 @@ import {
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
-// Mock pool data
-const mockPool = {
-  id: '1',
-  name: 'Small Business Growth Pool',
-  slug: 'small-business-growth',
-  description:
-    'Invest in carefully vetted small businesses with strong growth potential. This pool focuses on established businesses with proven revenue streams and solid business models.',
-  type: 'SMALL_BUSINESS',
-  status: 'ACTIVE',
-  apy: 12.5,
-  tvl: 1250000,
-  targetSize: 2000000,
-  availableLiquidity: 450000,
-  investors: 47,
-  minStake: 100,
-  managementFee: 2,
-  performanceFee: 10,
-  risk: 'Medium',
-  activeLoans: 15,
-  minimumCreditScore: 650,
-  maxLTV: 80,
-};
-
-const mockUserStake = {
-  amount: 5000,
-  shares: 4850,
-  rewards: 625,
-};
 
 export default function PoolDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
@@ -142,20 +114,43 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
   const isStaking = isApproving || isStakingContract || stakingStep === 'approving' || stakingStep === 'staking';
   const isUnstaking = isUnstakePending || isUnstakeConfirming;
 
-  // If still loading or error, use defaults for calculations
-  const poolData = pool || mockPool;
+  // Show loading or error states if pool data not available
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[400px]">
+        <LoadingDots />
+      </div>
+    );
+  }
 
-  const utilizationRate = poolData.totalStaked && poolData.availableLiquidity
-    ? ((poolData.totalStaked - poolData.availableLiquidity) / poolData.totalStaked) * 100
+  if (error || !pool) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Card className="p-8 text-center">
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+          <h2 className="text-xl font-semibold mb-2">Pool Not Found</h2>
+          <p className="text-muted-foreground mb-4">
+            The pool you&apos;re looking for doesn&apos;t exist or has been removed.
+          </p>
+          <Link href="/explore/pools">
+            <Button>Back to Pools</Button>
+          </Link>
+        </Card>
+      </div>
+    );
+  }
+
+  const utilizationRate = pool.totalStaked && pool.availableLiquidity
+    ? ((pool.totalStaked - pool.availableLiquidity) / pool.totalStaked) * 100
     : 0;
-  const targetProgress = poolData.totalStaked && poolData.poolSize
-    ? (poolData.totalStaked / poolData.poolSize) * 100
+  const targetProgress = pool.totalStaked && pool.poolSize
+    ? (pool.totalStaked / pool.poolSize) * 100
     : 0;
 
   // Calculate estimated shares and returns
   const estimatedShares = stakeAmount ? parseFloat(stakeAmount) * 0.97 : 0; // Mock 3% fee
-  const estimatedAnnualReturn = stakeAmount && poolData.annualizedReturn
-    ? (parseFloat(stakeAmount) * poolData.annualizedReturn) / 100
+  const estimatedAnnualReturn = stakeAmount && pool.annualizedReturn
+    ? (parseFloat(stakeAmount) * pool.annualizedReturn) / 100
     : 0;
   const estimatedMonthlyReturn = estimatedAnnualReturn / 12;
 
@@ -249,7 +244,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
   }, [isCancelUnstakeConfirmed]);
 
   const handleStake = async () => {
-    const minStake = poolData.minimumStake || mockPool.minStake;
+    const minStake = pool.minimumStake || 100;
     if (!stakeAmount || parseFloat(stakeAmount) < minStake) {
       toast({
         title: 'Invalid Amount',
@@ -430,7 +425,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
   }
 
   // Check if this is a Coming Soon pool
-  const isComingSoon = poolData.isComingSoon === true;
+  const isComingSoon = pool.isComingSoon === true;
 
   return (
     <div className="space-y-8 p-8">
@@ -455,7 +450,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
           All Pools
         </Link>
         {' / '}
-        <span className="text-foreground font-medium">{poolData.name}</span>
+        <span className="text-foreground font-medium">{pool.name}</span>
       </div>
 
       {/* Hero Section */}
@@ -465,7 +460,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
           {/* Pool Header */}
           <div className="animate-fade-in-up">
             <div className="flex items-center gap-3 mb-3">
-              <h1 className="text-2xl font-bold">{poolData.name}</h1>
+              <h1 className="text-2xl font-bold">{pool.name}</h1>
               {isComingSoon ? (
                 <Badge className="bg-purple-500 text-white flex items-center gap-1.5">
                   <Sparkles className="h-3 w-3" />
@@ -473,12 +468,12 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                 </Badge>
               ) : (
                 <Badge className="bg-green-100 text-green-800 flex items-center gap-1.5">
-                  <StatusIndicator status={poolData.status === 'ACTIVE' ? 'active' : 'pending'} size="sm" />
-                  {poolData.status}
+                  <StatusIndicator status={pool.status === 'ACTIVE' ? 'active' : 'pending'} size="sm" />
+                  {pool.status}
                 </Badge>
               )}
             </div>
-            <div className="text-base text-muted-foreground" dangerouslySetInnerHTML={{ __html: poolData.description || '' }} />
+            <div className="text-base text-muted-foreground" dangerouslySetInnerHTML={{ __html: pool.description || '' }} />
           </div>
 
           {/* Key Metrics Cards */}
@@ -495,7 +490,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                   </>
                 ) : (
                   <>
-                    <div className="text-3xl font-bold text-green-600">{poolData.annualizedReturn?.toFixed(1) || 'N/A'}<span className="text-xl">%</span></div>
+                    <div className="text-3xl font-bold text-green-600">{pool.annualizedReturn?.toFixed(1) || 'N/A'}<span className="text-xl">%</span></div>
                     <p className="text-xs text-muted-foreground mt-1">Annual percentage yield</p>
                   </>
                 )}
@@ -510,18 +505,18 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                 {isComingSoon ? (
                   <>
                     <div className="text-2xl font-bold text-muted-foreground">
-                      {poolData.poolSize ? `${((poolData.poolSize) / 1000000).toFixed(1)}M` : 'TBD'} <span className="text-lg text-muted-foreground">USDC</span>
+                      {pool.poolSize ? `${((pool.poolSize) / 1000000).toFixed(1)}M` : 'TBD'} <span className="text-lg text-muted-foreground">USDC</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">Target pool size</p>
                   </>
                 ) : (
                   <>
                     <div className="text-2xl font-bold">
-                      {((poolData.totalStaked || 0) / 1000000).toFixed(2)}M <span className="text-lg text-muted-foreground">USDC</span>
+                      {((pool.totalStaked || 0) / 1000000).toFixed(2)}M <span className="text-lg text-muted-foreground">USDC</span>
                     </div>
                     <Progress variant="gradient" value={targetProgress} className="mt-2 h-1.5" />
                     <p className="text-xs text-muted-foreground mt-1">
-                      {targetProgress.toFixed(0)}% of {((poolData.poolSize || 0) / 1000000).toFixed(1)}M target
+                      {targetProgress.toFixed(0)}% of {((pool.poolSize || 0) / 1000000).toFixed(1)}M target
                     </p>
                   </>
                 )}
@@ -541,7 +536,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                 ) : (
                   <>
                     <div className="text-2xl font-bold">
-                      {((poolData.availableLiquidity || 0) / 1000).toFixed(0)}K <span className="text-lg text-muted-foreground">USDC</span>
+                      {((pool.availableLiquidity || 0) / 1000).toFixed(0)}K <span className="text-lg text-muted-foreground">USDC</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
                       {utilizationRate.toFixed(0)}% utilized
@@ -568,10 +563,10 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                   <CardTitle>Pool Strategy</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {poolData.description ? (
+                  {pool.description ? (
                     <div
                       className="prose prose-sm max-w-none text-muted-foreground"
-                      dangerouslySetInnerHTML={{ __html: poolData.description }}
+                      dangerouslySetInnerHTML={{ __html: pool.description }}
                     />
                   ) : (
                     <p className="text-muted-foreground">
@@ -589,19 +584,19 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Pool Type</Label>
-                      <Badge variant="outline">{poolData.poolType?.replace('_', ' ') || 'N/A'}</Badge>
+                      <Badge variant="outline">{pool.poolType?.replace('_', ' ') || 'N/A'}</Badge>
                     </div>
                     <div className="space-y-2">
                       <Label>Max Loan-to-Value</Label>
-                      <p className="text-2xl font-bold">{poolData.maxLTV || 'N/A'}%</p>
+                      <p className="text-2xl font-bold">{pool.maxLTV || 'N/A'}%</p>
                     </div>
                     <div className="space-y-2">
                       <Label>Minimum Credit Score</Label>
-                      <p className="text-2xl font-bold">{poolData.minCreditScore || 'N/A'}</p>
+                      <p className="text-2xl font-bold">{pool.minCreditScore || 'N/A'}</p>
                     </div>
                     <div className="space-y-2">
                       <Label>Total Investors</Label>
-                      <p className="text-2xl font-bold">{poolData.totalInvestors || 0}</p>
+                      <p className="text-2xl font-bold">{pool.totalInvestors || 0}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -645,17 +640,17 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <Label>Management Fee</Label>
-                      <p className="text-2xl font-bold">{poolData.managementFeeRate || 0}%</p>
+                      <p className="text-2xl font-bold">{pool.managementFeeRate || 0}%</p>
                       <p className="text-xs text-muted-foreground">Annual fee on total staked</p>
                     </div>
                     <div>
                       <Label>Performance Fee</Label>
-                      <p className="text-2xl font-bold">{poolData.performanceFeeRate || 0}%</p>
+                      <p className="text-2xl font-bold">{pool.performanceFeeRate || 0}%</p>
                       <p className="text-xs text-muted-foreground">Fee on profits only</p>
                     </div>
                     <div>
                       <Label>Minimum Stake</Label>
-                      <p className="text-2xl font-bold">{poolData.minimumStake || 0} USDC</p>
+                      <p className="text-2xl font-bold">{pool.minimumStake || 0} USDC</p>
                       <p className="text-xs text-muted-foreground">Minimum investment amount</p>
                     </div>
                     <div>
@@ -944,7 +939,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                       <Input
                         id="stakeAmount"
                         type="number"
-                        placeholder={`Min. ${poolData.minimumStake || 100}`}
+                        placeholder={`Min. ${pool.minimumStake || 100}`}
                         className="pl-9"
                         value={stakeAmount}
                         onChange={e => setStakeAmount(e.target.value)}
@@ -953,7 +948,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                   </div>
 
                   {/* Estimated Returns */}
-                  {stakeAmount && parseFloat(stakeAmount) >= (poolData.minimumStake || 100) && (
+                  {stakeAmount && parseFloat(stakeAmount) >= (pool.minimumStake || 100) && (
                     <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
                       <div className="flex justify-between text-sm">
                         <span className="text-blue-700">Estimated Shares</span>
@@ -981,7 +976,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                     duration={1500}
                     disabled={
                       !stakeAmount ||
-                      parseFloat(stakeAmount) < (poolData.minimumStake || 100) ||
+                      parseFloat(stakeAmount) < (pool.minimumStake || 100) ||
                       isStaking ||
                       !isConnected
                     }
@@ -1016,7 +1011,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                     Total Investors
                   </span>
                   <span className="font-semibold">
-                    {isComingSoon ? '—' : (poolData.totalInvestors || 0)}
+                    {isComingSoon ? '—' : (pool.totalInvestors || 0)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -1033,7 +1028,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                     <Shield className="h-4 w-4" />
                     Pool Type
                   </span>
-                  <Badge variant="outline">{poolData.poolType?.replace('_', ' ') || 'N/A'}</Badge>
+                  <Badge variant="outline">{pool.poolType?.replace('_', ' ') || 'N/A'}</Badge>
                 </div>
               </CardContent>
             </Card>
@@ -1066,11 +1061,11 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
             <CardContent className="space-y-4">
               <p className="text-muted-foreground">
                 Your stake of {parseFloat(stakeAmount || '0').toLocaleString()} USDC has been successfully added to{' '}
-                <strong>{poolData.name}</strong>.
+                <strong>{pool.name}</strong>.
               </p>
               <div className="p-4 bg-green-50 rounded-lg border border-green-200">
                 <p className="text-sm text-green-800">
-                  🎉 You'll start earning {poolData.annualizedReturn?.toFixed(1) || 'N/A'}% APY immediately!
+                  🎉 You'll start earning {pool.annualizedReturn?.toFixed(1) || 'N/A'}% APY immediately!
                 </p>
               </div>
               <div className="flex gap-2">
@@ -1100,7 +1095,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
             <CardHeader>
               <CardTitle>Unstake Funds</CardTitle>
               <CardDescription>
-                Withdraw your staked funds from {poolData.name}
+                Withdraw your staked funds from {pool.name}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
