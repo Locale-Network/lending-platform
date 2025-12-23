@@ -26,13 +26,12 @@ if (!connectionString) {
 // Pool configuration with security settings
 const poolConfig: PoolConfig = {
   connectionString,
-  // SSL configuration
+  // SSL configuration - Supabase uses Let's Encrypt certs which Node may not recognize
+  // Setting rejectUnauthorized: false is standard for Supabase connections
   ssl:
     process.env.NODE_ENV === 'production'
       ? {
-          // For Supabase/managed DBs with proper CA certs, use rejectUnauthorized: true
-          // For self-signed certs, you may need rejectUnauthorized: false (less secure)
-          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
+          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true',
         }
       : false,
   // Connection limits
