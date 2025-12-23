@@ -114,42 +114,16 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
   const isStaking = isApproving || isStakingContract || stakingStep === 'approving' || stakingStep === 'staking';
   const isUnstaking = isUnstakePending || isUnstakeConfirming;
 
-  // Show loading or error states if pool data not available
-  if (isLoading) {
-    return (
-      <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[400px]">
-        <LoadingDots />
-      </div>
-    );
-  }
-
-  if (error || !pool) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <Card className="p-8 text-center">
-          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
-          <h2 className="text-xl font-semibold mb-2">Pool Not Found</h2>
-          <p className="text-muted-foreground mb-4">
-            The pool you&apos;re looking for doesn&apos;t exist or has been removed.
-          </p>
-          <Link href="/explore/pools">
-            <Button>Back to Pools</Button>
-          </Link>
-        </Card>
-      </div>
-    );
-  }
-
-  const utilizationRate = pool.totalStaked && pool.availableLiquidity
+  const utilizationRate = pool?.totalStaked && pool?.availableLiquidity
     ? ((pool.totalStaked - pool.availableLiquidity) / pool.totalStaked) * 100
     : 0;
-  const targetProgress = pool.totalStaked && pool.poolSize
+  const targetProgress = pool?.totalStaked && pool?.poolSize
     ? (pool.totalStaked / pool.poolSize) * 100
     : 0;
 
   // Calculate estimated shares and returns
   const estimatedShares = stakeAmount ? parseFloat(stakeAmount) * 0.97 : 0; // Mock 3% fee
-  const estimatedAnnualReturn = stakeAmount && pool.annualizedReturn
+  const estimatedAnnualReturn = stakeAmount && pool?.annualizedReturn
     ? (parseFloat(stakeAmount) * pool.annualizedReturn) / 100
     : 0;
   const estimatedMonthlyReturn = estimatedAnnualReturn / 12;
