@@ -21,7 +21,7 @@ const navItems = [
   },
   {
     title: 'Docs',
-    url: 'https://docs.locale.cash/locale-services/locale-lending',
+    url: 'https://docs.locale.cash/lending/intro',
     icon: BookOpen,
     external: true,
   },
