@@ -376,7 +376,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
   // Error state
   if (error || !pool) {
     return (
-      <div className="space-y-8 p-8">
+      <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 md:p-8">
         <Card className="border-destructive">
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-destructive mb-4">
@@ -402,7 +402,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
   const isComingSoon = pool.isComingSoon === true;
 
   return (
-    <div className="space-y-8 p-8">
+    <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 md:p-8">
       {/* Coming Soon Banner */}
       {isComingSoon && (
         <div className="bg-purple-100 border border-purple-300 rounded-xl p-4 flex items-center gap-3 animate-fade-in-up">

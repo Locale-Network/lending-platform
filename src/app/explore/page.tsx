@@ -131,7 +131,7 @@ export default function InvestorDashboard() {
   }, []);
 
   return (
-    <div className="space-y-8 p-8">
+    <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 md:p-8">
       {/* Coverflow Carousel */}
       <div className="animate-fade-in-up">
         <CoverflowCarousel />
@@ -139,7 +139,7 @@ export default function InvestorDashboard() {
 
       {/* Header */}
       <div className="animate-fade-in-up">
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Dashboard</h1>
       </div>
 
       {/* Portfolio Metrics - Elevated cards with subtle gradient backgrounds */}
@@ -152,7 +152,7 @@ export default function InvestorDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{portfolio.totalValue.toLocaleString()} <span className="text-lg font-medium text-muted-foreground">USDC</span></div>
+            <div className="text-2xl sm:text-3xl font-bold tracking-tight">{portfolio.totalValue.toLocaleString()} <span className="text-lg font-medium text-muted-foreground">USDC</span></div>
             <p className="text-xs text-muted-foreground mt-1">
               {portfolio.totalRewards > 0 ? `+${portfolio.totalRewards.toLocaleString()} USDC from initial` : 'Connect wallet to view'}
             </p>
@@ -167,7 +167,7 @@ export default function InvestorDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{portfolio.totalInvested.toLocaleString()} <span className="text-lg font-medium text-muted-foreground">USDC</span></div>
+            <div className="text-2xl sm:text-3xl font-bold tracking-tight">{portfolio.totalInvested.toLocaleString()} <span className="text-lg font-medium text-muted-foreground">USDC</span></div>
             <p className="text-xs text-muted-foreground mt-1">Across {portfolio.activeInvestments} pools</p>
           </CardContent>
         </Card>
@@ -180,7 +180,7 @@ export default function InvestorDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-green-600">
+            <div className="text-2xl sm:text-3xl font-bold tracking-tight text-green-600">
               +{portfolio.totalRewards.toLocaleString()} <span className="text-lg font-medium">USDC</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">All-time earnings</p>
@@ -195,7 +195,7 @@ export default function InvestorDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{portfolio.avgReturn}<span className="text-lg font-medium text-muted-foreground">%</span></div>
+            <div className="text-2xl sm:text-3xl font-bold tracking-tight">{portfolio.avgReturn}<span className="text-lg font-medium text-muted-foreground">%</span></div>
             <p className="text-xs text-muted-foreground mt-1">Weighted across pools</p>
           </CardContent>
         </Card>
@@ -207,7 +207,7 @@ export default function InvestorDashboard() {
           <CardTitle>Quick Actions</CardTitle>
           <CardDescription>Get started with your investments</CardDescription>
         </CardHeader>
-        <CardContent className="flex gap-4">
+        <CardContent className="flex flex-col sm:flex-row gap-3 sm:gap-4">
           <Link href="/explore/pools" className="flex-1">
             <Button className="w-full" size="lg">
               <Wallet className="mr-2 h-4 w-4" />

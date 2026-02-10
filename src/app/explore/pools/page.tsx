@@ -139,10 +139,10 @@ export default function PoolsPage() {
     });
 
   return (
-    <div className="space-y-8 p-8 pb-24">
+    <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 md:p-8 pb-24">
       {/* Header */}
       <div className="animate-fade-in-up">
-        <h1 className="text-3xl font-bold tracking-tight">Staking Pools</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Staking Pools</h1>
         <p className="text-muted-foreground mt-2">
           Discover lending pools that match your investment goals
         </p>
@@ -170,7 +170,7 @@ export default function PoolsPage() {
       {/* Filters and Search */}
       <Card variant="elevated" className="animate-fade-in-up">
         <CardContent className="pt-6">
-          <div className="grid gap-4 md:grid-cols-5">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
             <div className="md:col-span-2">
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />

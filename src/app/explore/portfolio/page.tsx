@@ -179,9 +179,9 @@ export default function PortfolioPage() {
 
   if (portfolioLoading) {
     return (
-      <div className="container mx-auto py-8 space-y-8">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 md:py-8 space-y-6 sm:space-y-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">My Portfolio</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">My Portfolio</h1>
           <p className="text-muted-foreground">Track your investments, earnings, and transactions</p>
         </div>
         <PortfolioStatsSkeleton />
@@ -192,9 +192,9 @@ export default function PortfolioPage() {
 
   if (portfolioError) {
     return (
-      <div className="container mx-auto py-8 space-y-8">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 md:py-8 space-y-6 sm:space-y-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">My Portfolio</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">My Portfolio</h1>
           <p className="text-muted-foreground">Track your investments, earnings, and transactions</p>
         </div>
         <Card className="border-destructive">
@@ -211,11 +211,11 @@ export default function PortfolioPage() {
     : 0;
 
   return (
-    <div className="container mx-auto py-8 space-y-8">
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 md:py-8 space-y-6 sm:space-y-8">
       {/* Header with refresh and live indicator */}
       <div className="flex items-center justify-between animate-fade-in-up">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">My Portfolio</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">My Portfolio</h1>
           <p className="text-muted-foreground">Track your investments, earnings, and transactions</p>
         </div>
         <div className="flex items-center gap-3">
