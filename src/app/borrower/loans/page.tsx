@@ -1,10 +1,9 @@
 import Search from '@/components/custom/url-search';
 import { Suspense } from 'react';
-import Table from '@/components/custom/data-table';
-import { columns } from './columns';
 import ApplyLoanButton from './apply-loans';
 import { getLoanApplications } from './actions';
 import { getSession } from '@/lib/auth/authorization';
+import { LoansTableWithActions } from './loans-table-with-actions';
 
 export default async function Page(
   props: {
@@ -39,11 +38,9 @@ export default async function Page(
           <ApplyLoanButton />
         </div>
       </div>
-      <Suspense key={query + currentPage}>
-        <Table
-          rows={loanApplications}
-          columns={columns}
-          total={loanApplications.length}
+      <Suspense key={query + currentPage + loanApplications.map(l => l.id).join(',')}>
+        <LoansTableWithActions
+          loans={loanApplications}
           totalPages={Math.ceil(loanApplications.length / 10)}
         />
       </Suspense>

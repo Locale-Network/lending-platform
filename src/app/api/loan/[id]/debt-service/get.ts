@@ -4,6 +4,9 @@ import { PlaidApi, Transaction } from 'plaid';
 import { PlaidEnvironments } from 'plaid';
 import { Configuration } from 'plaid';
 import { getLoanAmount } from '@/services/contracts/creditTreasuryPool';
+import { getSession } from '@/lib/auth/authorization';
+import { Role } from '@prisma/client';
+import { checkRateLimit, getClientIp, rateLimitHeaders } from '@/lib/rate-limit';
 
 /**
  * API endpoint is called automatically at the end of Plaid Link flow after user's bank account is connected
@@ -39,6 +42,37 @@ export interface DebtServiceApiResponse {
 }
 
 export async function GET(request: NextRequest) {
+  // SECURITY: Require authentication
+  const session = await getSession();
+  if (!session?.address) {
+    return NextResponse.json(
+      {
+        status: 'error',
+        message: 'Unauthorized - please connect your wallet',
+        data: null,
+      },
+      { status: 401 }
+    );
+  }
+
+  // SECURITY: Rate limiting on financial data access
+  const clientIp = await getClientIp();
+  const rateLimitResult = await checkRateLimit(
+    `debt-service:${session.address}`,
+    { limit: 30, windowSeconds: 60 } // 30 requests per minute
+  );
+
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      {
+        status: 'error',
+        message: 'Too many requests. Please wait before trying again.',
+        data: null,
+      },
+      { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+    );
+  }
+
   const loanApplicationId = request.nextUrl.searchParams.get('id');
   if (!loanApplicationId) {
     return NextResponse.json(
@@ -78,9 +112,46 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // SECURITY: Verify ownership - user must be the borrower OR an admin
+  const isOwner = loanApplication.accountAddress.toLowerCase() === session.address.toLowerCase();
+  const isAdmin = session.user.role === Role.ADMIN;
+
+  if (!isOwner && !isAdmin) {
+    console.warn(`[debt-service] Unauthorized access attempt: ${session.address} tried to access loan ${loanApplicationId} owned by ${loanApplication.accountAddress}`);
+    return NextResponse.json(
+      {
+        status: 'error',
+        message: 'Forbidden - You do not have access to this loan',
+        data: null,
+      },
+      { status: 403 }
+    );
+  }
+
   try {
+    // SECURITY: Use environment-configured Plaid endpoint, fail if not set
+    const plaidEnv = process.env.NEXT_PUBLIC_PLAID_ENV;
+    if (!plaidEnv) {
+      console.error('[debt-service] PLAID_ENV not configured');
+      return NextResponse.json(
+        {
+          status: 'error',
+          message: 'Payment service not configured',
+          data: null,
+        },
+        { status: 500 }
+      );
+    }
+
+    const plaidBasePath =
+      plaidEnv === 'production'
+        ? PlaidEnvironments.production
+        : plaidEnv === 'development'
+          ? PlaidEnvironments.development
+          : PlaidEnvironments.sandbox;
+
     const configuration = new Configuration({
-      basePath: PlaidEnvironments.sandbox,
+      basePath: plaidBasePath,
       baseOptions: {
         headers: {
           'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,

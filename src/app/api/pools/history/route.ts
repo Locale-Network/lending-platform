@@ -20,8 +20,14 @@ export async function GET(request: NextRequest) {
     const userAddress = searchParams.get('userAddress');
     const poolId = searchParams.get('poolId');
     const eventType = searchParams.get('type');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
-    const offset = parseInt(searchParams.get('offset') || '0');
+
+    // SECURITY: Validate pagination params - parseInt can return NaN for invalid input
+    const limitParam = parseInt(searchParams.get('limit') || '50', 10);
+    const offsetParam = parseInt(searchParams.get('offset') || '0', 10);
+
+    // Ensure valid numbers with safe bounds
+    const limit = Math.min(Math.max(1, isNaN(limitParam) ? 50 : limitParam), 100);
+    const offset = Math.max(0, isNaN(offsetParam) ? 0 : offsetParam);
 
     const supabase = await createClient();
 

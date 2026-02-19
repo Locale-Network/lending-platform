@@ -24,6 +24,7 @@ interface Pool {
   riskPremiumMin: number;
   riskPremiumMax: number;
   isFeatured: boolean;
+  riskLevel?: string;
 }
 
 interface PortfolioSummary {
@@ -260,10 +261,6 @@ export default function InvestorDashboard() {
             ) : (
               <div className="space-y-3">
                 {featuredPools.map(pool => {
-                  // Calculate estimated APY from base rate + risk premium midpoint
-                  const estimatedApy = pool.annualizedReturn ||
-                    (pool.baseInterestRate + (pool.riskPremiumMin + pool.riskPremiumMax) / 2);
-
                   return (
                     <div key={pool.id} className="flex items-center justify-between p-4 border rounded-xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-200 group">
                       <div className="space-y-1">
@@ -274,9 +271,9 @@ export default function InvestorDashboard() {
                           )}
                         </div>
                         <div className="flex gap-4 text-sm text-muted-foreground">
-                          <span className="font-medium text-green-600">{estimatedApy.toFixed(1)}% APY</span>
+                          <span className="font-medium text-green-600">{pool.annualizedReturn ? `${pool.annualizedReturn.toFixed(1)}% APY` : 'APY: N/A'}</span>
                           <span>TVL: {(pool.totalStaked / 1000000).toFixed(2)}M</span>
-                          <span className="text-blue-600">{getRiskLevel(pool.poolType)} Risk</span>
+                          <span className="text-blue-600">{pool.riskLevel || 'Medium'} Risk</span>
                         </div>
                       </div>
                       <Link href={`/explore/pools/${pool.slug}`}>

@@ -26,7 +26,8 @@ import LoadingDots from '@/components/ui/loading-dots';
 const fetcher = async (url: string) => {
   const res = await fetch(url);
   if (!res.ok) {
-    const error = new Error('An error occurred while fetching the data.');
+    const body = await res.json().catch(() => ({}));
+    const error = new Error(body.error || `Request failed with status ${res.status}`);
     throw error;
   }
   return res.json();
@@ -113,7 +114,7 @@ export default function AdminPoolsPage() {
         <Card className="border-destructive">
           <CardContent className="pt-6">
             <p className="text-sm text-destructive">
-              Failed to load pool data. Please try again later.
+              Failed to load pool data: {error.message || 'Unknown error'}
             </p>
           </CardContent>
         </Card>
@@ -284,7 +285,7 @@ export default function AdminPoolsPage() {
                                 <div className="flex items-center gap-2">
                                   <LoanStatusIcon status={poolLoan.loanApplication?.status || 'DRAFT'} />
                                   <Badge className={loanStatusColors[poolLoan.loanApplication?.status || 'DRAFT']}>
-                                    {poolLoan.loanApplication?.status || 'Unknown'}
+                                    {poolLoan.loanApplication?.status === 'DISBURSED' ? 'ACTIVE' : poolLoan.loanApplication?.status || 'Unknown'}
                                   </Badge>
                                 </div>
                               </div>

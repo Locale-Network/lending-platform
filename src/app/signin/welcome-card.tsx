@@ -42,11 +42,11 @@ export default function CardWithForm() {
         <WalletButton label="Sign In" signInScreen />
 
         <div className="text-xs text-muted-foreground">
-          <Link href="#" className="hover:underline">
+          <Link href="/terms" className="hover:underline">
             Terms and Conditions
           </Link>
           {' • '}
-          <Link href="#" className="hover:underline">
+          <Link href="/privacy" className="hover:underline">
             Privacy Policy
           </Link>
         </div>

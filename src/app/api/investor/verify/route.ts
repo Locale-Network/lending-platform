@@ -7,6 +7,7 @@ import {
   getInvestorTokenId,
   AccreditationLevel,
 } from '@/services/nft/mintCredential';
+import { checkRateLimit, getClientIp, rateLimits, rateLimitHeaders } from '@/lib/rate-limit';
 
 /**
  * POST /api/investor/verify
@@ -28,10 +29,25 @@ export async function POST(request: NextRequest) {
     }
 
     const address = session.address;
+    const dbAddress = address.toLowerCase();
+
+    // SECURITY: Rate limiting on NFT minting (expensive on-chain operation)
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `investor-verify:${address}`,
+      { limit: 3, windowSeconds: 86400 } // 3 mints per day (handles retries)
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many verification attempts. Please try again tomorrow.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
+    }
 
     // Check if already verified
     const account = await prisma.account.findUnique({
-      where: { address },
+      where: { address: dbAddress },
       include: {
         KYCVerification: true,
       },
@@ -58,7 +74,16 @@ export async function POST(request: NextRequest) {
     }
 
     // For MVP: Check if SBT checks are disabled (bypass full KYC)
-    const disableSBTChecks = process.env.DISABLE_SBT_CHECKS === 'true';
+    // SECURITY: Block this bypass in production to prevent accidental deployment
+    const disableSBTChecks =
+      process.env.DISABLE_SBT_CHECKS === 'true' &&
+      process.env.NODE_ENV !== 'production';
+
+    if (process.env.DISABLE_SBT_CHECKS === 'true' && process.env.NODE_ENV === 'production') {
+      console.warn(
+        '[SECURITY] DISABLE_SBT_CHECKS=true is ignored in production. Remove this env var.'
+      );
+    }
 
     if (disableSBTChecks) {
       // MVP Mode: Issue credential without full KYC
@@ -76,7 +101,7 @@ export async function POST(request: NextRequest) {
       if (result.success && result.tokenId) {
         // Update account with token ID
         await prisma.account.update({
-          where: { address },
+          where: { address: dbAddress },
           data: { investorNFTTokenId: result.tokenId },
         });
 
@@ -119,7 +144,7 @@ export async function POST(request: NextRequest) {
     if (result.success && result.tokenId) {
       // Update account with token ID
       await prisma.account.update({
-        where: { address },
+        where: { address: dbAddress },
         data: { investorNFTTokenId: result.tokenId },
       });
 
@@ -161,10 +186,25 @@ export async function GET(request: NextRequest) {
     }
 
     const address = session.address;
+    const dbAddress = address.toLowerCase();
+
+    // SECURITY: Rate limiting on verification status checks
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `investor-verify-status:${address}`,
+      rateLimits.api // 100 requests per minute
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait before trying again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
+    }
 
     // Get account info
     const account = await prisma.account.findUnique({
-      where: { address },
+      where: { address: dbAddress },
       include: {
         KYCVerification: true,
       },
@@ -194,7 +234,7 @@ export async function GET(request: NextRequest) {
         // Sync to database if found
         if (isVerified) {
           await prisma.account.update({
-            where: { address },
+            where: { address: dbAddress },
             data: { investorNFTTokenId: onChainTokenId },
           });
         }
@@ -205,7 +245,7 @@ export async function GET(request: NextRequest) {
       isVerified,
       tokenId,
       kycStatus: account.KYCVerification?.status || null,
-      requiresKYC: !isVerified && process.env.DISABLE_SBT_CHECKS !== 'true',
+      requiresKYC: !isVerified && !(process.env.DISABLE_SBT_CHECKS === 'true' && process.env.NODE_ENV !== 'production'),
     });
   } catch (error) {
     console.error('[/api/investor/verify GET] Error:', error);

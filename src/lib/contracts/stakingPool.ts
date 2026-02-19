@@ -50,7 +50,11 @@ export const stakingPoolAbi = [
       { name: 'totalStaked', type: 'uint256', internalType: 'uint256' },
       { name: 'totalShares', type: 'uint256', internalType: 'uint256' },
       { name: 'feeRate', type: 'uint256', internalType: 'uint256' },
+      { name: 'poolCooldownPeriod', type: 'uint256', internalType: 'uint256' },
+      { name: 'maturityDate', type: 'uint256', internalType: 'uint256' },
+      { name: 'eligibilityRegistry', type: 'address', internalType: 'address' },
       { name: 'active', type: 'bool', internalType: 'bool' },
+      { name: 'cooldownWaived', type: 'bool', internalType: 'bool' },
     ],
     stateMutability: 'view',
   },
@@ -62,11 +66,13 @@ export const stakingPoolAbi = [
       { name: '_user', type: 'address', internalType: 'address' },
     ],
     outputs: [
+      { name: 'principal', type: 'uint256', internalType: 'uint256' },
       { name: 'amount', type: 'uint256', internalType: 'uint256' },
       { name: 'shares', type: 'uint256', internalType: 'uint256' },
       { name: 'stakedAt', type: 'uint256', internalType: 'uint256' },
       { name: 'pendingUnstake', type: 'uint256', internalType: 'uint256' },
       { name: 'canWithdrawAt', type: 'uint256', internalType: 'uint256' },
+      { name: 'claimedYield', type: 'uint256', internalType: 'uint256' },
     ],
     stateMutability: 'view',
   },
@@ -94,7 +100,24 @@ export const stakingPoolAbi = [
     outputs: [{ name: '', type: 'uint256', internalType: 'uint256' }],
     stateMutability: 'view',
   },
+  {
+    type: 'function',
+    name: 'getAvailableYield',
+    inputs: [
+      { name: '_poolId', type: 'bytes32', internalType: 'bytes32' },
+      { name: '_user', type: 'address', internalType: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256', internalType: 'uint256' }],
+    stateMutability: 'view',
+  },
   // Write functions
+  {
+    type: 'function',
+    name: 'claimYield',
+    inputs: [{ name: '_poolId', type: 'bytes32', internalType: 'bytes32' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     name: 'stake',
@@ -138,6 +161,9 @@ export const stakingPoolAbi = [
       { name: '_name', type: 'string', internalType: 'string' },
       { name: '_minimumStake', type: 'uint256', internalType: 'uint256' },
       { name: '_feeRate', type: 'uint256', internalType: 'uint256' },
+      { name: '_cooldownPeriod', type: 'uint256', internalType: 'uint256' },
+      { name: '_maturityDate', type: 'uint256', internalType: 'uint256' },
+      { name: '_eligibilityRegistry', type: 'address', internalType: 'address' },
     ],
     outputs: [],
     stateMutability: 'nonpayable',
@@ -169,6 +195,16 @@ export const stakingPoolAbi = [
     outputs: [{ name: '', type: 'uint256', internalType: 'uint256' }],
     stateMutability: 'view',
   },
+  {
+    type: 'function',
+    name: 'setPoolCooldownWaived',
+    inputs: [
+      { name: '_poolId', type: 'bytes32', internalType: 'bytes32' },
+      { name: '_waived', type: 'bool', internalType: 'bool' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   // Events
   {
     type: 'event',
@@ -178,6 +214,8 @@ export const stakingPoolAbi = [
       { name: 'name', type: 'string', indexed: false, internalType: 'string' },
       { name: 'minimumStake', type: 'uint256', indexed: false, internalType: 'uint256' },
       { name: 'feeRate', type: 'uint256', indexed: false, internalType: 'uint256' },
+      { name: 'cooldownPeriod', type: 'uint256', indexed: false, internalType: 'uint256' },
+      { name: 'maturityDate', type: 'uint256', indexed: false, internalType: 'uint256' },
     ],
   },
   {
@@ -275,16 +313,22 @@ export interface PoolData {
   totalStaked: bigint;
   totalShares: bigint;
   feeRate: bigint;
+  poolCooldownPeriod: bigint;
+  maturityDate: bigint;
+  eligibilityRegistry: string;
   active: boolean;
+  cooldownWaived: boolean;
 }
 
 /**
  * User stake data structure returned from contract
  */
 export interface UserStakeData {
+  principal: bigint;
   amount: bigint;
   shares: bigint;
   stakedAt: bigint;
   pendingUnstake: bigint;
   canWithdrawAt: bigint;
+  claimedYield: bigint;
 }

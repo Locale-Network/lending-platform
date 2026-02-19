@@ -73,6 +73,7 @@ export function HoldToConfirmButton({
   const [isCompleted, setIsCompleted] = useState(false);
   const animationRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
+  const isHoldingRef = useRef(false); // Use ref to track holding state for animation loop
 
   const styles = variantStyles[variant];
   const sizeStyle = sizeStyles[size];
@@ -82,6 +83,7 @@ export function HoldToConfirmButton({
     setProgress(0);
     setIsHolding(false);
     setIsCompleted(false);
+    isHoldingRef.current = false;
     startTimeRef.current = null;
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
@@ -90,7 +92,7 @@ export function HoldToConfirmButton({
   }, []);
 
   const animate = useCallback(() => {
-    if (!startTimeRef.current) return;
+    if (!startTimeRef.current || !isHoldingRef.current) return;
 
     const elapsed = Date.now() - startTimeRef.current;
     const newProgress = Math.min(elapsed / duration, 1);
@@ -99,27 +101,34 @@ export function HoldToConfirmButton({
     if (newProgress >= 1) {
       setIsCompleted(true);
       setIsHolding(false);
-      onConfirm();
-    } else if (isHolding) {
+      isHoldingRef.current = false;
+      // Await async onConfirm to prevent double-triggers
+      Promise.resolve(onConfirm()).catch((error) => {
+        console.error('[HoldToConfirmButton] onConfirm error:', error);
+      });
+    } else {
       animationRef.current = requestAnimationFrame(animate);
     }
-  }, [duration, isHolding, onConfirm]);
+  }, [duration, onConfirm]);
 
   const handlePointerDown = useCallback(() => {
     if (disabled || loading || isCompleted) return;
 
     setIsHolding(true);
+    isHoldingRef.current = true;
     startTimeRef.current = Date.now();
     animationRef.current = requestAnimationFrame(animate);
   }, [disabled, loading, isCompleted, animate]);
 
   const handlePointerUp = useCallback(() => {
+    isHoldingRef.current = false;
     if (!isCompleted) {
       resetState();
     }
   }, [isCompleted, resetState]);
 
   const handlePointerLeave = useCallback(() => {
+    isHoldingRef.current = false;
     if (!isCompleted) {
       resetState();
     }
@@ -133,6 +142,38 @@ export function HoldToConfirmButton({
       }
     };
   }, []);
+
+  // Stable ref for global pointer handler to prevent memory leaks
+  const handleGlobalPointerUpRef = useRef<() => void>(() => {});
+
+  // Update the ref when dependencies change
+  useEffect(() => {
+    handleGlobalPointerUpRef.current = () => {
+      isHoldingRef.current = false;
+      if (!isCompleted) {
+        resetState();
+      }
+    };
+  }, [isCompleted, resetState]);
+
+  // Add global pointer up listener to catch releases outside the button
+  useEffect(() => {
+    if (!isHolding) return;
+
+    const handleGlobalPointerUp = () => {
+      handleGlobalPointerUpRef.current();
+    };
+
+    window.addEventListener('mouseup', handleGlobalPointerUp);
+    window.addEventListener('touchend', handleGlobalPointerUp);
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalPointerUp);
+      window.removeEventListener('touchend', handleGlobalPointerUp);
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+    };
+  }, [isHolding]);
 
   // Reset completed state when loading changes
   useEffect(() => {

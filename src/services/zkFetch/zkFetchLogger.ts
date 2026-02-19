@@ -1,6 +1,7 @@
 import 'server-only';
 
 import prisma from '@prisma/index';
+import { Prisma } from '@prisma/client';
 import crypto from 'crypto';
 
 /**
@@ -225,7 +226,7 @@ export async function getAllLogs(options: {
   const { page = 1, limit = 50, action, success, loanId, borrowerAddress } = options;
   const skip = (page - 1) * limit;
 
-  const where: Record<string, unknown> = {};
+  const where: Prisma.ZkFetchLogWhereInput = {};
   if (action) where.action = action;
   if (success !== undefined) where.success = success;
   if (loanId) where.loanId = loanId;
@@ -273,7 +274,7 @@ export async function getAllProofs(options: {
   const { page = 1, limit = 50, loanId, borrowerAddress, verified } = options;
   const skip = (page - 1) * limit;
 
-  const where: Record<string, unknown> = {};
+  const where: Prisma.ZkFetchProofWhereInput = {};
   if (loanId) where.loanId = loanId;
   if (borrowerAddress) where.borrowerAddress = borrowerAddress;
   if (verified !== undefined) {

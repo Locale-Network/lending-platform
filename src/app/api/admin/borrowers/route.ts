@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/authorization';
 import prisma from '@prisma/index';
 import { logger } from '@/lib/logger';
+import { checkRateLimit, getClientIp, rateLimits, rateLimitHeaders } from '@/lib/rate-limit';
 
 const log = logger.child({ module: 'admin-borrowers' });
 
@@ -18,12 +19,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
+    // SECURITY: Rate limiting on admin data access
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `admin-borrowers:${session.address}`,
+      rateLimits.api // 100 requests per minute
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait before trying again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const poolId = searchParams.get('poolId');
     const status = searchParams.get('status');
 
     // Get all accounts with BORROWER role or with loan applications
+    // SECURITY: Cap results and limit nested relations to prevent unbounded query
     const borrowers = await prisma.account.findMany({
+      take: 1_000,
       where: {
         OR: [
           { role: 'BORROWER' },
@@ -32,8 +49,10 @@ export async function GET(request: NextRequest) {
       },
       include: {
         loanApplications: {
+          take: 50,
           include: {
             poolLoans: {
+              take: 10,
               include: {
                 pool: {
                   select: {
@@ -67,7 +86,11 @@ export async function GET(request: NextRequest) {
       ).length;
       const totalBorrowed = submittedApplications
         .filter((loan) => loan.status === 'ACTIVE' || loan.status === 'DISBURSED' || loan.status === 'REPAID')
-        .reduce((sum, loan) => sum + (loan.amount || 0), 0);
+        .reduce((sum, loan) => {
+          // Use actual funded principal from PoolLoan records (source of truth)
+          const poolPrincipal = loan.poolLoans.reduce((pSum, pl) => pSum + (pl.principal || 0), 0);
+          return sum + (poolPrincipal > 0 ? poolPrincipal : (loan.amount || 0));
+        }, 0);
 
       // Get all pools this borrower has loans in
       const pools = new Set<string>();

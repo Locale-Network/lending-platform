@@ -14,6 +14,8 @@ import { User, Bell, Wallet, Check, Copy, ExternalLink, Download, Pencil, X, Loa
 import { useWalletAuth } from '@/hooks/useWalletAuth';
 import { updateEmailAction, getAccountEmailAction } from '@/app/actions/account';
 import { getInvestorVerificationStatusAction } from '@/app/actions/settings';
+import JurisdictionGate from '@/components/jurisdiction-gate';
+import { getExplorerUrl } from '@/lib/explorer';
 
 export default function SettingsPage() {
   return (
@@ -247,7 +249,7 @@ function AccountSettings() {
               asChild
             >
               <a
-                href={`https://sepolia.arbiscan.io/address/${address}`}
+                href={getExplorerUrl('address', address)}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -286,32 +288,27 @@ function AccountSettings() {
 function InvestorVerificationSettings() {
   const { address, isConnected } = useWalletAuth();
   const { toast } = useToast();
-  const [verificationStatus, setVerificationStatus] = useState<{
-    isVerified: boolean;
-    tokenId: string | null;
-    kycStatus: string | null;
-  } | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<Awaited<ReturnType<typeof getInvestorVerificationStatusAction>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
 
-  useEffect(() => {
-    async function loadVerificationStatus() {
-      if (!address) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const status = await getInvestorVerificationStatusAction();
-        setVerificationStatus(status);
-      } catch (error) {
-        console.error('Failed to load verification status:', error);
-      } finally {
-        setLoading(false);
-      }
+  const loadStatus = async () => {
+    if (!address) {
+      setLoading(false);
+      return;
     }
+    try {
+      const status = await getInvestorVerificationStatusAction();
+      setVerificationStatus(status);
+    } catch (error) {
+      console.error('Failed to load status:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    loadVerificationStatus();
+  useEffect(() => {
+    loadStatus();
   }, [address]);
 
   const handleStartVerification = async () => {
@@ -324,11 +321,7 @@ function InvestorVerificationSettings() {
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          setVerificationStatus({
-            isVerified: true,
-            tokenId: data.tokenId,
-            kycStatus: 'success',
-          });
+          await loadStatus();
           toast({
             title: 'Verification Complete!',
             description: 'Your Investor Credential has been issued.',
@@ -347,7 +340,7 @@ function InvestorVerificationSettings() {
           variant: 'destructive',
         });
       }
-    } catch (error) {
+    } catch {
       toast({
         title: 'Error',
         description: 'Failed to start verification. Please try again.',
@@ -394,108 +387,127 @@ function InvestorVerificationSettings() {
     );
   }
 
+  const jurisdictionCertified = !!verificationStatus?.jurisdictionCertifiedAt;
+
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5" />
-          <CardTitle>Investor Verification</CardTitle>
-        </div>
-        <CardDescription>
-          Verify your identity to receive your Investor Credential (SBT)
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {verificationStatus?.isVerified ? (
-          <div className="rounded-lg border border-green-200 bg-green-50 p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
-                <ShieldCheck className="h-5 w-5 text-green-600" />
-              </div>
-              <div className="flex-1">
-                <h4 className="text-sm font-semibold text-green-900">Verified Investor</h4>
-                <p className="text-sm text-green-700 mt-1">
-                  Your Investor Credential has been issued. You can now stake in all available pools.
-                </p>
-                {verificationStatus.tokenId && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <Badge variant="secondary" className="text-xs">
-                      Token ID: {verificationStatus.tokenId}
-                    </Badge>
-                    <a
-                      href={`https://sepolia.arbiscan.io/token/${process.env.NEXT_PUBLIC_INVESTOR_CREDENTIAL_ADDRESS}?a=${verificationStatus.tokenId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-green-600 hover:underline flex items-center gap-1"
-                    >
-                      View on Arbiscan
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
+    <div className="space-y-6">
+      {/* Step 1: Jurisdiction Gate */}
+      <JurisdictionGate
+        status={{
+          jurisdictionType: verificationStatus?.jurisdictionType ?? null,
+          jurisdictionCountry: verificationStatus?.jurisdictionCountry ?? null,
+          jurisdictionState: verificationStatus?.jurisdictionState ?? null,
+          jurisdictionCertifiedAt: verificationStatus?.jurisdictionCertifiedAt ?? null,
+          accreditationMethod: verificationStatus?.accreditationMethod ?? null,
+          regSCertifications: verificationStatus?.regSCertifications ?? null,
+        }}
+        onComplete={loadStatus}
+      />
+
+      {/* Step 2: Identity Verification (only after jurisdiction is certified) */}
+      {jurisdictionCertified && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5" />
+              <CardTitle>Identity Verification</CardTitle>
+            </div>
+            <CardDescription>
+              Verify your identity to receive your Investor Credential (SBT)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {verificationStatus?.isVerified ? (
+              <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
+                    <ShieldCheck className="h-5 w-5 text-green-600" />
                   </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-100">
-                  <AlertCircle className="h-5 w-5 text-yellow-600" />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-green-900">Verified Investor</h4>
+                    <p className="text-sm text-green-700 mt-1">
+                      Your Investor Credential has been issued. You can now stake in all available pools.
+                    </p>
+                    {verificationStatus.tokenId && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <Badge variant="secondary" className="text-xs">
+                          Token ID: {verificationStatus.tokenId}
+                        </Badge>
+                        <a
+                          href={`${getExplorerUrl('token', process.env.NEXT_PUBLIC_INVESTOR_CREDENTIAL_ADDRESS!)}?a=${verificationStatus.tokenId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-green-600 hover:underline flex items-center gap-1"
+                        >
+                          View on Arbiscan
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <h4 className="text-sm font-semibold text-yellow-900">Verification Required</h4>
-                  <p className="text-sm text-yellow-700 mt-1">
-                    Complete identity verification to receive your Investor Credential.
-                    This soulbound token (SBT) proves you're a verified investor.
-                  </p>
-                </div>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-100">
+                      <AlertCircle className="h-5 w-5 text-yellow-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-yellow-900">Identity Verification Required</h4>
+                      <p className="text-sm text-yellow-700 mt-1">
+                        Complete identity verification to receive your Investor Credential (SBT).
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
-            <div className="space-y-2">
-              <h4 className="text-sm font-medium">Benefits of Verification:</h4>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-600" />
-                  Stake in all available lending pools
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-600" />
-                  Receive returns from verified borrowers
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-600" />
-                  On-chain proof of investor status
-                </li>
-              </ul>
-            </div>
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium">Benefits of Verification:</h4>
+                  <ul className="text-sm text-muted-foreground space-y-1">
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-600" />
+                      Stake in all available lending pools
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-600" />
+                      Receive returns from verified borrowers
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-600" />
+                      On-chain proof of investor status
+                    </li>
+                  </ul>
+                </div>
 
-            <Button
-              onClick={handleStartVerification}
-              disabled={verifying}
-              className="w-full"
-            >
-              {verifying ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Starting Verification...
-                </>
-              ) : (
-                <>
-                  <ShieldCheck className="mr-2 h-4 w-4" />
-                  Get Verified
-                </>
-              )}
-            </Button>
+                <Button
+                  onClick={handleStartVerification}
+                  disabled={verifying}
+                  className="w-full"
+                >
+                  {verifying ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Starting Verification...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      Get Verified
+                    </>
+                  )}
+                </Button>
 
-            <p className="text-xs text-muted-foreground text-center">
-              Verification is quick and secure. Your data is never shared.
-            </p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                <p className="text-xs text-muted-foreground text-center">
+                  Verification is quick and secure. Your data is never shared.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
 
@@ -746,7 +758,7 @@ function WalletSettings() {
                   asChild
                 >
                   <a
-                    href={`https://sepolia.arbiscan.io/address/${address}`}
+                    href={getExplorerUrl('address', address)}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

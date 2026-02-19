@@ -36,14 +36,14 @@ export default function AnalyticsPage() {
   const recentActivity = activityData?.activity || [];
 
   // Format pool performance data from pools API
-  const poolPerformance = (poolsData || [])
+  const poolPerformance = (Array.isArray(poolsData) ? poolsData : [])
     .filter((pool: any) => pool.status === 'ACTIVE')
     .slice(0, 6)
     .map((pool: any) => ({
       id: pool.id,
       name: pool.name,
       slug: pool.slug,
-      apy: pool.annualizedReturn || (pool.baseInterestRate + (pool.riskPremiumMin + pool.riskPremiumMax) / 2),
+      apy: pool.annualizedReturn || 0,
       tvl: pool.totalStaked || 0,
       growth: 0, // Would need historical data
       investors: pool.totalInvestors || 0,

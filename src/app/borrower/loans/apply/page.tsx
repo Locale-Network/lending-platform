@@ -130,6 +130,14 @@ async function LoanApplication({
     orderBy: { name: 'asc' },
   });
 
+  if (pools.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">No lending pools are currently available. Please check back later.</p>
+      </div>
+    );
+  }
+
   // Convert Decimal types to numbers for the client component
   const availablePools: AvailablePool[] = pools.map(pool => ({
     id: pool.id,

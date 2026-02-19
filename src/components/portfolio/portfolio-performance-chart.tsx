@@ -1,7 +1,8 @@
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { AlertTriangle, TrendingUp } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useMemo } from 'react';
 
 type PortfolioPerformanceChartProps = {
@@ -9,121 +10,78 @@ type PortfolioPerformanceChartProps = {
 };
 
 export function PortfolioPerformanceChart({ stakes }: PortfolioPerformanceChartProps) {
-  // Generate mock historical data for demonstration
-  // In production, this would come from actual historical records
-  const performanceData = useMemo(() => {
-    if (!stakes || stakes.length === 0) return [];
+  // Calculate current portfolio snapshot (NOT simulated historical data)
+  const portfolioSnapshot = useMemo(() => {
+    if (!stakes || stakes.length === 0) return null;
 
-    const today = new Date();
-    const data = [];
+    let totalInvested = 0;
+    let totalEarnings = 0;
 
-    // Generate data for the last 30 days
-    for (let i = 29; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
+    stakes.forEach((stake) => {
+      totalInvested += stake.amount || 0;
+      totalEarnings += stake.pendingRewards || 0;
+    });
 
-      // Calculate portfolio value for this day
-      let portfolioValue = 0;
-      let investedAmount = 0;
-
-      stakes.forEach((stake) => {
-        const stakeDate = new Date(stake.stakedAt || stake.created_at);
-        if (stakeDate <= date) {
-          // Calculate how many days the stake has been active
-          const daysActive = Math.floor((date.getTime() - stakeDate.getTime()) / (1000 * 60 * 60 * 24));
-          const apy = stake.pool?.annualizedReturn || 12;
-          const dailyReturn = (apy / 365 / 100);
-          const rewards = stake.amount * dailyReturn * daysActive;
-
-          portfolioValue += stake.amount + rewards;
-          investedAmount += stake.amount;
-        }
-      });
-
-      data.push({
-        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        value: Math.round(portfolioValue),
-        invested: Math.round(investedAmount),
-        earnings: Math.round(portfolioValue - investedAmount),
-      });
-    }
-
-    return data;
+    return {
+      totalValue: totalInvested + totalEarnings,
+      invested: totalInvested,
+      earnings: totalEarnings,
+    };
   }, [stakes]);
 
   if (!stakes || stakes.length === 0) {
     return null;
   }
 
-  const currentValue = performanceData[performanceData.length - 1]?.value || 0;
-  const initialValue = performanceData[0]?.value || 0;
-  const totalGain = currentValue - initialValue;
-  const gainPercentage = initialValue > 0 ? ((totalGain / initialValue) * 100).toFixed(2) : '0.00';
-
+  // Show current portfolio value without fake historical chart
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Portfolio Performance</CardTitle>
-            <CardDescription>Last 30 days</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Portfolio Summary
+            </CardTitle>
+            <CardDescription>Current holdings</CardDescription>
           </div>
-          <div className="text-right">
-            <p className="text-2xl font-bold">{currentValue.toLocaleString()} USDC</p>
-            <p className={`text-sm ${totalGain >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {totalGain >= 0 ? '+' : ''}{totalGain.toLocaleString()} USDC ({gainPercentage}%)
-            </p>
-          </div>
+          {portfolioSnapshot && (
+            <div className="text-right">
+              <p className="text-2xl font-bold">{portfolioSnapshot.totalValue.toLocaleString()} USDC</p>
+              {portfolioSnapshot.earnings > 0 && (
+                <p className="text-sm text-green-600">
+                  +{portfolioSnapshot.earnings.toLocaleString()} USDC earnings
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={performanceData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis
-                dataKey="date"
-                stroke="#6b7280"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                stroke="#6b7280"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value) => `${value.toLocaleString()}`}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px',
-                }}
-                formatter={(value: number) => `${value.toLocaleString()} USDC`}
-              />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                dot={false}
-                name="Portfolio Value"
-              />
-              <Line
-                type="monotone"
-                dataKey="invested"
-                stroke="#6b7280"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                dot={false}
-                name="Invested Amount"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+      <CardContent className="space-y-4">
+        {/* Current portfolio breakdown */}
+        {portfolioSnapshot && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 rounded-lg border bg-card">
+              <p className="text-sm text-muted-foreground">Invested</p>
+              <p className="text-xl font-semibold">{portfolioSnapshot.invested.toLocaleString()} USDC</p>
+            </div>
+            <div className="p-4 rounded-lg border bg-card">
+              <p className="text-sm text-muted-foreground">Pending Rewards</p>
+              <p className="text-xl font-semibold text-green-600">
+                {portfolioSnapshot.earnings.toLocaleString()} USDC
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Historical data notice */}
+        <Alert variant="default" className="bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800 dark:text-amber-200">
+            Historical performance charts are not yet available. We show your current portfolio
+            snapshot based on on-chain stake positions and pending rewards.
+          </AlertDescription>
+        </Alert>
       </CardContent>
     </Card>
   );

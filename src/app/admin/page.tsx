@@ -153,7 +153,7 @@ export default function AdminDashboard() {
                 <CardTitle>Recent Loan Applications</CardTitle>
                 <CardDescription>Latest loan requests requiring review</CardDescription>
               </div>
-              <Link href="/admin/loans">
+              <Link href="/admin/borrowers">
                 <Button variant="outline" size="sm">
                   View All
                 </Button>

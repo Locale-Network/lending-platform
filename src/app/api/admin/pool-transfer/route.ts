@@ -6,6 +6,7 @@ import {
   transferToLoanPool,
   getPoolBalancesSummary,
 } from '@/services/contracts/poolBridge';
+import { checkRateLimit, getClientIp, rateLimitHeaders } from '@/lib/rate-limit';
 
 /**
  * Admin Pool Transfer API
@@ -44,15 +45,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is admin
-    const user = await prisma.account.findUnique({
-      where: { address: session.address },
-    });
-
-    if (user?.role !== 'ADMIN') {
+    // Check if user is admin (session.user.role is already populated by getSession)
+    if (session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Forbidden - Admin access required' },
         { status: 403 }
+      );
+    }
+
+    // SECURITY: Rate limiting on pool transfer reads
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `pool-transfer:${session.address}`,
+      { limit: 20, windowSeconds: 3600 } // 20 reads per hour
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait before trying again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
       );
     }
 
@@ -107,15 +118,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is admin
-    const user = await prisma.account.findUnique({
-      where: { address: session.address },
-    });
-
-    if (user?.role !== 'ADMIN') {
+    // Check if user is admin (session.user.role is already populated by getSession)
+    if (session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Forbidden - Admin access required' },
         { status: 403 }
+      );
+    }
+
+    // SECURITY: Strict rate limiting on fund transfers (very sensitive operation)
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `pool-transfer-write:${session.address}`,
+      { limit: 5, windowSeconds: 3600 } // 5 transfers per hour
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many transfer requests. Please wait before trying again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
       );
     }
 

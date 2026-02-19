@@ -7,7 +7,7 @@ import {
 import { NextRequest, NextResponse } from 'next/server';
 import plaidClient from '@/utils/plaid';
 import { checkRateLimit, getClientIp, rateLimits, rateLimitHeaders } from '@/lib/rate-limit';
-import { mintBorrowerCredential } from '@/services/nft/mintCredential';
+import { mintBorrowerCredential, mintInvestorCredential, AccreditationLevel } from '@/services/nft/mintCredential';
 import prisma from '@prisma/index';
 
 interface WebhookData {
@@ -34,55 +34,81 @@ const handleStatusUpdatedWebhook = async (webhookData: WebhookData) => {
     status,
   });
 
-  // If KYC is successful, mint the BorrowerCredential NFT
+  // If KYC is successful, mint both BorrowerCredential and InvestorCredential NFTs
   if (status === 'success') {
-    try {
-      // Get the KYC record to find the user's address
-      const kycRecord = await getKycVerification({
-        identityVerificationId: webhookData.identity_verification_id,
-      });
+    // Get the KYC record to find the user's address
+    const kycRecord = await getKycVerification({
+      identityVerificationId: webhookData.identity_verification_id,
+    });
 
-      if (!kycRecord) {
-        console.error('[KYC Webhook] KYC record not found for minting');
-        return;
-      }
+    if (!kycRecord) {
+      console.error('[KYC Webhook] KYC record not found for minting');
+      return;
+    }
 
-      // Normalize address to lowercase (should already be lowercase from KYC creation)
-      const normalizedAddress = kycRecord.accountAddress.toLowerCase();
+    // Normalize address to lowercase (should already be lowercase from KYC creation)
+    const normalizedAddress = kycRecord.accountAddress.toLowerCase();
 
-      // Check if user already has a credential (idempotency)
-      const account = await prisma.account.findUnique({
-        where: { address: normalizedAddress },
-      });
+    // Check existing credentials (idempotency)
+    const account = await prisma.account.findUnique({
+      where: { address: normalizedAddress },
+    });
 
-      if (account?.borrowerNFTTokenId) {
-        console.log('[KYC Webhook] User already has BorrowerCredential, skipping mint');
-        return;
-      }
-
-      // Mint the BorrowerCredential
-      const mintResult = await mintBorrowerCredential({
-        to: normalizedAddress,
-        plaidVerificationId: webhookData.identity_verification_id,
-      });
-
-      if (mintResult.success && mintResult.tokenId) {
-        // Store the token ID in the database
-        await prisma.account.update({
-          where: { address: normalizedAddress },
-          data: { borrowerNFTTokenId: mintResult.tokenId },
+    // Mint BorrowerCredential if not already present
+    if (!account?.borrowerNFTTokenId) {
+      try {
+        const mintResult = await mintBorrowerCredential({
+          to: normalizedAddress,
+          plaidVerificationId: webhookData.identity_verification_id,
         });
 
-        console.log(
-          `[KYC Webhook] BorrowerCredential minted: tokenId=${mintResult.tokenId}, address=${normalizedAddress}`
-        );
-      } else {
-        console.error('[KYC Webhook] Failed to mint BorrowerCredential:', mintResult.error);
+        if (mintResult.success && mintResult.tokenId) {
+          await prisma.account.update({
+            where: { address: normalizedAddress },
+            data: { borrowerNFTTokenId: mintResult.tokenId },
+          });
+
+          console.log(
+            `[KYC Webhook] BorrowerCredential minted: tokenId=${mintResult.tokenId}, address=${normalizedAddress}`
+          );
+        } else {
+          console.error('[KYC Webhook] Failed to mint BorrowerCredential:', mintResult.error);
+        }
+      } catch (error) {
+        console.error('[KYC Webhook] Error minting BorrowerCredential:', error);
       }
-    } catch (error) {
-      // Log the error but don't fail the webhook
-      // The KYC status has already been updated successfully
-      console.error('[KYC Webhook] Error minting BorrowerCredential:', error);
+    } else {
+      console.log('[KYC Webhook] User already has BorrowerCredential, skipping mint');
+    }
+
+    // Mint InvestorCredential if not already present
+    if (!account?.investorNFTTokenId) {
+      try {
+        const investorMintResult = await mintInvestorCredential({
+          to: normalizedAddress,
+          accreditationLevel: AccreditationLevel.RETAIL,
+          validityPeriod: 365 * 24 * 60 * 60, // 1 year
+          investmentLimit: 0,
+          plaidVerificationId: webhookData.identity_verification_id,
+        });
+
+        if (investorMintResult.success && investorMintResult.tokenId) {
+          await prisma.account.update({
+            where: { address: normalizedAddress },
+            data: { investorNFTTokenId: investorMintResult.tokenId },
+          });
+
+          console.log(
+            `[KYC Webhook] InvestorCredential minted: tokenId=${investorMintResult.tokenId}, address=${normalizedAddress}`
+          );
+        } else {
+          console.error('[KYC Webhook] Failed to mint InvestorCredential:', investorMintResult.error);
+        }
+      } catch (investorError) {
+        console.error('[KYC Webhook] Error minting InvestorCredential:', investorError);
+      }
+    } else {
+      console.log('[KYC Webhook] User already has InvestorCredential, skipping mint');
     }
   }
 };
@@ -100,7 +126,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const webhookData: WebhookData = await req.json();
+    // SECURITY: Parse JSON with explicit error handling
+    let webhookData: WebhookData;
+    try {
+      webhookData = await req.json();
+    } catch (parseError) {
+      console.error('[KYC Webhook] Invalid JSON body:', parseError);
+      return NextResponse.json(
+        { message: 'Invalid JSON payload' },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Validate required webhook fields before processing
+    if (!webhookData.webhook_code || !webhookData.webhook_type || !webhookData.identity_verification_id) {
+      return NextResponse.json(
+        { message: 'Invalid webhook payload - missing required fields' },
+        { status: 400 }
+      );
+    }
 
     switch (webhookData.webhook_code) {
       case PlaidWebhookCode.RETRIED:
@@ -113,13 +157,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       {
-        message: `Webhook ${webhookData.webhook_type}:${webhookData.webhook_code} processed successfully`,
+        message: 'Webhook processed successfully',
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error) {
+    // SECURITY: Log full error internally, return generic message to client
+    console.error('[KYC Webhook] Error processing webhook:', error);
     return NextResponse.json(
-      { message: `Webhook failed to process: ${error.message}` },
+      { message: 'Webhook processing failed' },
       { status: 500 }
     );
   }

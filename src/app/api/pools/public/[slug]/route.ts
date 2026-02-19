@@ -35,9 +35,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         minCreditScore: true,
         maxLTV: true,
         allowedIndustries: true,
-        totalStaked: true,
-        totalInvestors: true,
-        availableLiquidity: true,
+        // Note: totalStaked, totalInvestors, availableLiquidity are aggregated below
         annualizedReturn: true,
         imageUrl: true,
         isFeatured: true,
@@ -51,7 +49,56 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Pool not found' }, { status: 404 });
     }
 
-    return NextResponse.json(pool);
+    // Aggregate real-time statistics from InvestorStake table
+    // This replaces the static totalStaked, totalInvestors, availableLiquidity fields
+    const stakeAggregation = await prisma.investorStake.aggregate({
+      where: {
+        poolId: pool.id,
+        status: 'ACTIVE', // Use status enum instead of isActive boolean
+      },
+      _sum: {
+        stakedAmount: true, // Field is stakedAmount, not amount
+      },
+      _count: {
+        investorAddress: true,
+      },
+    });
+
+    // Count unique investors (distinct wallet addresses)
+    const uniqueInvestors = await prisma.investorStake.groupBy({
+      by: ['investorAddress'],
+      where: {
+        poolId: pool.id,
+        status: 'ACTIVE', // Use status enum instead of isActive boolean
+      },
+    });
+
+    // Calculate real statistics
+    const totalStaked = stakeAggregation._sum.stakedAmount || 0;
+    const totalInvestors = uniqueInvestors.length;
+
+    // Available liquidity = pool size - total loans disbursed from this pool
+    const loansAggregation = await prisma.poolLoan.aggregate({
+      where: {
+        poolId: pool.id,
+      },
+      _sum: {
+        principal: true,
+      },
+    });
+    const totalDisbursed = loansAggregation._sum.principal || 0;
+    const availableLiquidity = Math.max(0, totalStaked - totalDisbursed);
+
+    return NextResponse.json({
+      ...pool,
+      // Override with real-time aggregated values
+      totalStaked,
+      totalInvestors,
+      availableLiquidity,
+      // Additional computed metrics
+      totalDisbursed,
+      utilizationRate: totalStaked > 0 ? Math.round((totalDisbursed / totalStaked) * 100) : 0,
+    });
   } catch (error) {
     log.error({ err: error }, 'Error fetching pool');
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

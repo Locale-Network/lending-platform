@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/authorization';
 import prisma from '@prisma/index';
 import { updateLoanInterestRate } from '@/services/contracts/creditTreasuryPool';
+import { checkRateLimit, getClientIp, rateLimits, rateLimitHeaders } from '@/lib/rate-limit';
 
 /**
  * Admin API: Manage Pending Rate Changes
@@ -19,20 +20,42 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const user = await prisma.account.findUnique({
-      where: { address: session.address },
-    });
-
-    if (!user || (user.role !== 'ADMIN' && user.role !== 'APPROVER')) {
+    // Check role (session.user.role is already populated by getSession)
+    if (session.user.role !== 'ADMIN' && session.user.role !== 'APPROVER') {
       return NextResponse.json({ error: 'Forbidden - Admin or Approver access required' }, { status: 403 });
     }
 
+    // SECURITY: Rate limiting on rate approvals list
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `rate-approvals:${session.address}`,
+      rateLimits.api // 100 requests per minute
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait before trying again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get('status') || 'PENDING';
+    const statusParam = searchParams.get('status') || 'PENDING';
+
+    // SECURITY: Validate status against allowed enum values to prevent injection
+    const allowedStatuses = ['PENDING', 'APPROVED', 'REJECTED', 'EXECUTED', 'FAILED'] as const;
+    type RateChangeStatusType = (typeof allowedStatuses)[number];
+    if (!allowedStatuses.includes(statusParam as RateChangeStatusType)) {
+      return NextResponse.json({
+        success: false,
+        error: `Invalid status. Must be one of: ${allowedStatuses.join(', ')}`
+      }, { status: 400 });
+    }
+    const status = statusParam as RateChangeStatusType;
 
     const pendingChanges = await prisma.pendingRateChange.findMany({
       where: {
-        status: status as any
+        status
       },
       include: {
         loanApplication: {
@@ -59,7 +82,7 @@ export async function GET(req: NextRequest) {
     console.error('[Rate Approvals API] Error fetching pending changes:', error);
     return NextResponse.json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Failed to fetch pending rate changes'
     }, { status: 500 });
   }
 }
@@ -73,12 +96,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const user = await prisma.account.findUnique({
-      where: { address: session.address },
-    });
-
-    if (!user || (user.role !== 'ADMIN' && user.role !== 'APPROVER')) {
+    // Check role (session.user.role is already populated by getSession)
+    if (session.user.role !== 'ADMIN' && session.user.role !== 'APPROVER') {
       return NextResponse.json({ error: 'Forbidden - Admin or Approver access required' }, { status: 403 });
+    }
+
+    // SECURITY: Rate limiting on rate approval actions (executes on-chain)
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `rate-approval-action:${session.address}`,
+      { limit: 10, windowSeconds: 3600 } // 10 approvals per hour
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many approval requests. Please wait before trying again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
     }
 
     const body = await req.json();
@@ -216,7 +250,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
           success: false,
-          error: `Approval succeeded but execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+          error: 'Approval succeeded but on-chain execution failed. Check admin logs.'
         }, { status: 500 });
       }
     }
@@ -225,7 +259,7 @@ export async function POST(req: NextRequest) {
     console.error('[Rate Approvals API] Error processing request:', error);
     return NextResponse.json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Failed to process rate approval request'
     }, { status: 500 });
   }
 }

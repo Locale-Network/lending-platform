@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@prisma/index';
 import client from '@/utils/plaid';
 import { Transaction, TransactionsSyncRequest } from 'plaid';
+import { getSession } from '@/lib/auth/authorization';
+import { checkRateLimit, getClientIp, rateLimits, rateLimitHeaders } from '@/lib/rate-limit';
+import { subMonths } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,17 +17,41 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    // SECURITY: Require authentication
+    const session = await getSession();
+    const accountAddress = session?.address;
 
-    // Pagination parameters
+    if (!accountAddress) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // SECURITY: Rate limiting
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(clientIp, rateLimits.api);
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait a moment and try again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
+    }
+
+    const { id } = await params;
+    const normalizedAddress = accountAddress.toLowerCase();
+
+    // Pagination parameters with validation
     const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const perPage = Math.min(parseInt(searchParams.get('perPage') || '10', 10), 50); // Max 50, default 10
+    // SECURITY: Validate pagination parameters to prevent DoS and ensure bounds
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+    const perPage = Math.min(50, Math.max(1, parseInt(searchParams.get('perPage') || '10', 10) || 10));
     const skip = (page - 1) * perPage;
 
-    // Get loan application with Plaid access token (check both direct field and related table)
-    const loanApplication = await prisma.loanApplication.findUnique({
-      where: { id },
+    // SECURITY: Verify ownership - only the borrower can view their transactions
+    const loanApplication = await prisma.loanApplication.findFirst({
+      where: {
+        id,
+        accountAddress: normalizedAddress,
+      },
       select: {
         id: true,
         plaidAccessToken: true,
@@ -56,7 +83,7 @@ export async function GET(
 
     if (!loanApplication) {
       return NextResponse.json(
-        { error: 'Loan application not found' },
+        { error: 'Loan application not found or access denied' },
         { status: 404 }
       );
     }
@@ -69,9 +96,19 @@ export async function GET(
     const totalTransactionCount = loanApplication._count?.transactions || 0;
 
     if (loanApplication.transactions && loanApplication.transactions.length > 0) {
-      // Fetch all transactions for summary calculation (without pagination)
+      // Fetch transactions within rolling 3-month window for summary calculation
+      // This matches the DSCR calculation window so numbers are consistent
+      const DSCR_WINDOW_MONTHS = 3;
+      const windowStartDate = subMonths(new Date(), DSCR_WINDOW_MONTHS);
+
       const allTransactions = await prisma.transaction.findMany({
-        where: { loanApplicationId: id, isDeleted: false },
+        where: {
+          loanApplicationId: id,
+          isDeleted: false,
+          transactionId: { not: null },
+          date: { gte: windowStartDate },
+        },
+        distinct: ['transactionId'],
         select: { amount: true, merchant: true },
       });
 

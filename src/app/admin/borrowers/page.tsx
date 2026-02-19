@@ -22,6 +22,7 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
 import LoadingDots from '@/components/ui/loading-dots';
+import { getExplorerUrl } from '@/lib/explorer';
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -210,7 +211,7 @@ export default function BorrowersPage() {
                 <SelectItem value="PENDING">Pending</SelectItem>
                 <SelectItem value="SUBMITTED">Submitted</SelectItem>
                 <SelectItem value="APPROVED">Approved</SelectItem>
-                <SelectItem value="DISBURSED">Disbursed</SelectItem>
+                <SelectItem value="DISBURSED">Active</SelectItem>
                 <SelectItem value="ACTIVE">Active</SelectItem>
                 <SelectItem value="REPAID">Repaid</SelectItem>
                 <SelectItem value="REJECTED">Rejected</SelectItem>
@@ -279,7 +280,7 @@ export default function BorrowersPage() {
                     <div className="flex items-center gap-2">
                       <Button variant="ghost" size="icon" asChild onClick={(e) => e.stopPropagation()}>
                         <a
-                          href={`https://arbiscan.io/address/${borrower.address}`}
+                          href={getExplorerUrl('address', borrower.address)}
                           target="_blank"
                           rel="noopener noreferrer"
                         >
@@ -331,7 +332,7 @@ export default function BorrowersPage() {
                                       </Link>
                                     </td>
                                     <td className="py-2 px-3">
-                                      <Badge className={statusColors[loan.status]}>{loan.status}</Badge>
+                                      <Badge className={statusColors[loan.status]}>{loan.status === 'DISBURSED' ? 'ACTIVE' : loan.status}</Badge>
                                     </td>
                                     <td className="py-2 px-3 text-muted-foreground">
                                       {new Date(loan.createdAt).toLocaleDateString()}

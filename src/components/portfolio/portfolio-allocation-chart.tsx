@@ -58,9 +58,12 @@ export function PortfolioAllocationChart({ stakes }: PortfolioAllocationChartPro
                 cy="50%"
                 labelLine={false}
                 label={renderCustomLabel}
-                outerRadius={80}
+                outerRadius={100}
+                innerRadius={50}
                 fill="#8884d8"
                 dataKey="value"
+                stroke="#fff"
+                strokeWidth={2}
               >
                 {allocationData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />

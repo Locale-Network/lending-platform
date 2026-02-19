@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ExternalLink, RefreshCw, ArrowUpRight, ArrowDownLeft, Users } from 'lucide-react';
 import { useWalletAuth } from '@/hooks/useWalletAuth';
 import useSWR from 'swr';
+import { getExplorerUrl } from '@/lib/explorer';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -183,7 +184,7 @@ export function PoolActivityFeed() {
                         </Badge>
                         {tx.transaction_hash && (
                           <a
-                            href={`https://sepolia.arbiscan.io/tx/${tx.transaction_hash}`}
+                            href={getExplorerUrl('tx', tx.transaction_hash)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:text-blue-800"

@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ExternalLink, RefreshCw, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { useAlchemyTransfers } from '@/hooks/use-alchemy-transfers';
 import { useWalletAuth } from '@/hooks/useWalletAuth';
+import { getExplorerUrl } from '@/lib/explorer';
 
 export function BlockchainTransfers() {
   const { address, isConnected } = useWalletAuth();
@@ -144,7 +145,7 @@ export function BlockchainTransfers() {
                         )}
                         <span>•</span>
                         <a
-                          href={`https://sepolia.arbiscan.io/tx/${transfer.hash}`}
+                          href={getExplorerUrl('tx', transfer.hash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="hover:underline flex items-center gap-1"

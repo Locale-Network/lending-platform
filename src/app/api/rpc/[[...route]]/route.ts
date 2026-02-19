@@ -46,18 +46,37 @@ export async function POST(
     const { route: routeParam } = await params;
     const route = routeParam || [];
 
+    // SECURITY: Validate route segments to prevent SSRF
+    // Only allow alphanumeric, hyphens, and specific signer API paths
+    const ALLOWED_ROUTE_PATTERN = /^[a-zA-Z0-9\-]+$/;
+    for (const segment of route) {
+      if (!ALLOWED_ROUTE_PATTERN.test(segment)) {
+        return NextResponse.json(
+          { error: 'Invalid route segment' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Determine if this is a signer API call or RPC call
     const isSignerAPI = route.includes('signer');
 
     let alchemyUrl: string;
 
     if (isSignerAPI) {
-      // Signer API endpoints use a different base URL
-      // Route comes in as ['signer', 'v1', 'signer-config'] so we join and use as-is
+      // SECURITY: Whitelist allowed signer API paths to prevent SSRF
+      const allowedPrefixes = ['signer/v1/'];
       const path = route.join('/');
+      const isAllowed = allowedPrefixes.some(prefix => path.startsWith(prefix));
+      if (!isAllowed) {
+        return NextResponse.json(
+          { error: 'Invalid signer API path' },
+          { status: 400 }
+        );
+      }
       alchemyUrl = `https://api.g.alchemy.com/${path}`;
     } else {
-      // Standard RPC calls
+      // Standard RPC calls - no user input in URL
       const network = process.env.NODE_ENV === 'production' ? 'arb-mainnet' : 'arb-sepolia';
       alchemyUrl = `https://${network}.g.alchemy.com/v2/${apiKey}`;
     }
@@ -113,9 +132,29 @@ export async function GET(
   try {
     const { route: routeParam } = await params;
     const route = routeParam || [];
-    const path = route.join('/');
 
-    // Signer API GET endpoint - route already includes signer/v1
+    // SECURITY: Validate route segments to prevent SSRF
+    const ALLOWED_ROUTE_PATTERN = /^[a-zA-Z0-9\-]+$/;
+    for (const segment of route) {
+      if (!ALLOWED_ROUTE_PATTERN.test(segment)) {
+        return NextResponse.json(
+          { error: 'Invalid route segment' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // SECURITY: Whitelist allowed signer API paths to prevent SSRF
+    const path = route.join('/');
+    const allowedPrefixes = ['signer/v1/'];
+    const isAllowed = allowedPrefixes.some(prefix => path.startsWith(prefix));
+    if (!isAllowed) {
+      return NextResponse.json(
+        { error: 'Invalid signer API path' },
+        { status: 400 }
+      );
+    }
+
     const alchemyUrl = `https://api.g.alchemy.com/${path}`;
 
     const response = await fetch(alchemyUrl, {

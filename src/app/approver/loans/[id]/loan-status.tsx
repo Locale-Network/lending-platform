@@ -1,23 +1,34 @@
 'use client';
 
 import { LoanApplicationStatus } from '@prisma/client';
-import { updateLoanApplicationStatus, disburseLoan } from './actions';
+import { updateLoanApplicationStatus, disburseLoan, closeLoan } from './actions';
 import { Button } from '@/components/ui/button';
 import { getLoanStatusStyle } from '@/utils/colour';
 import { useTransition, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { HoldToConfirmButton } from '@/components/ui/hold-to-confirm-button';
+import { HoldConfirmModal } from '@/components/ui/hold-confirm-modal';
+import { formatAddress } from '@/utils/string';
+import { Address } from 'viem';
 
 interface Props {
   approverAddress: string;
   loanId: string;
   currentStatus: LoanApplicationStatus;
   isAdmin?: boolean;
+  loanAmount?: number;
+  tokenSymbol?: string;
+  borrowerAddress?: string;
+  interestRate?: number;
+  loanActive?: boolean;
 }
 
 export default function LoanStatus(props: Props) {
   const [isPending, startTransition] = useTransition();
   const [isDisbursingFunds, setIsDisbursingFunds] = useState(false);
+  const [isClosingLoan, setIsClosingLoan] = useState(false);
+  const [showDisburseModal, setShowDisburseModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
   const { toast } = useToast();
 
   const approvedStyle = getLoanStatusStyle(LoanApplicationStatus.APPROVED);
@@ -72,6 +83,24 @@ export default function LoanStatus(props: Props) {
     });
   };
 
+  const handleCloseLoan = async () => {
+    setIsClosingLoan(true);
+    try {
+      const { isError, errorMessage } = await closeLoan({
+        accountAddress: props.approverAddress,
+        loanApplicationId: props.loanId,
+      });
+
+      if (isError) {
+        toast({ variant: 'destructive', title: 'Close Failed', description: errorMessage });
+      } else {
+        toast({ title: 'Success', description: 'Loan marked as repaid' });
+      }
+    } finally {
+      setIsClosingLoan(false);
+    }
+  };
+
   const handleDisburse = async () => {
     setIsDisbursingFunds(true);
     try {
@@ -103,31 +132,39 @@ export default function LoanStatus(props: Props) {
 
         {/* Show Disburse button for APPROVED loans (ADMIN only) */}
         {props.currentStatus === LoanApplicationStatus.APPROVED && props.isAdmin && (
-          <HoldToConfirmButton
-            onConfirm={handleDisburse}
-            duration={2000}
+          <Button
+            className="bg-green-600 hover:bg-green-700 text-white"
+            onClick={() => setShowDisburseModal(true)}
             disabled={isPending || isDisbursingFunds}
-            loading={isDisbursingFunds}
-            variant="success"
-            size="sm"
           >
-            Hold to Disburse Funds
-          </HoldToConfirmButton>
+            Disburse Funds
+          </Button>
         )}
+
+        {/* Show Close Loan button for DISBURSED loans that are fully repaid on-chain */}
+        {props.currentStatus === LoanApplicationStatus.DISBURSED &&
+          props.isAdmin &&
+          props.loanActive === false && (
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => setShowCloseModal(true)}
+              disabled={isPending || isClosingLoan}
+            >
+              Close Loan
+            </Button>
+          )}
 
         {/* Show Reject button for non-approved/non-rejected loans */}
         {props.currentStatus !== LoanApplicationStatus.REJECTED &&
           props.currentStatus !== LoanApplicationStatus.APPROVED &&
           props.currentStatus !== LoanApplicationStatus.DISBURSED && (
-            <HoldToConfirmButton
-              onConfirm={onReject}
-              duration={1500}
-              disabled={isPending}
+            <Button
               variant="destructive"
-              size="sm"
+              onClick={() => setShowRejectModal(true)}
+              disabled={isPending}
             >
-              Hold to Reject
-            </HoldToConfirmButton>
+              Reject
+            </Button>
           )}
 
         {/* Show Request Revision button */}
@@ -140,6 +177,74 @@ export default function LoanStatus(props: Props) {
           )}
       </div>
 
+      {/* Disburse Funds Confirmation Modal */}
+      <HoldConfirmModal
+        open={showDisburseModal}
+        onOpenChange={setShowDisburseModal}
+        onConfirm={handleDisburse}
+        title="Disburse Loan Funds"
+        description="This will transfer funds from the pool to the borrower's wallet. This action cannot be undone."
+        confirmText="Hold to Disburse"
+        variant="success"
+        duration={2000}
+        loading={isDisbursingFunds}
+        details={
+          <div className="space-y-2 rounded-md bg-muted p-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Amount:</span>
+              <span className="font-medium">{props.loanAmount?.toLocaleString()} {props.tokenSymbol}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Interest Rate:</span>
+              <span className="font-medium">{((props.interestRate ?? 0) / 100).toFixed(2)}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Borrower:</span>
+              <span className="font-mono font-medium">
+                {props.borrowerAddress ? formatAddress(props.borrowerAddress as Address) : ''}
+              </span>
+            </div>
+          </div>
+        }
+      />
+
+      {/* Reject Loan Confirmation Modal */}
+      <HoldConfirmModal
+        open={showRejectModal}
+        onOpenChange={setShowRejectModal}
+        onConfirm={onReject}
+        title="Reject Loan Application"
+        description="This will permanently reject the loan application. The borrower will be notified."
+        confirmText="Hold to Reject"
+        variant="destructive"
+        duration={1500}
+        loading={isPending}
+      />
+
+      {/* Close Loan Confirmation Modal */}
+      <HoldConfirmModal
+        open={showCloseModal}
+        onOpenChange={setShowCloseModal}
+        onConfirm={handleCloseLoan}
+        title="Close Loan (Mark as Repaid)"
+        description="This will verify the loan is fully repaid on-chain and update the status to REPAID."
+        confirmText="Hold to Close"
+        variant="success"
+        duration={1500}
+        loading={isClosingLoan}
+        details={
+          <div className="space-y-2 rounded-md bg-muted p-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Loan Amount:</span>
+              <span className="font-medium">{props.loanAmount?.toLocaleString()} {props.tokenSymbol}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">On-chain Status:</span>
+              <span className="font-medium text-blue-600">Fully Repaid</span>
+            </div>
+          </div>
+        }
+      />
     </>
   );
 }

@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth/authorization';
 import { createPublicClient, http, parseAbi, type Chain } from 'viem';
 import { arbitrum, arbitrumSepolia } from 'viem/chains';
 import { fetchNoticeByLoanId, getRelayStatus } from '@/services/relay';
+import { getExplorerUrl } from '@/lib/explorer';
 
 /**
  * GET /api/loan/[id]/verify-onchain
@@ -40,19 +41,23 @@ const SIMPLE_LOAN_POOL_ABI = parseAbi([
   'function zkFetchDscrResults(bytes32) external view returns (uint256 dscrValue, uint256 interestRate, bytes32 proofHash, uint256 verifiedAt, bool isValid)',
 ]);
 
-const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '421614', 10);
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
+const CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID ? parseInt(process.env.NEXT_PUBLIC_CHAIN_ID, 10) : undefined;
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
 const SIMPLE_LOAN_POOL_ADDRESS = (process.env.SIMPLE_LOAN_POOL_ADDRESS || process.env.NEXT_PUBLIC_LOAN_POOL_ADDRESS) as `0x${string}`;
 
 function getChain(): Chain {
+  if (!CHAIN_ID) {
+    throw new Error('NEXT_PUBLIC_CHAIN_ID not configured');
+  }
   switch (CHAIN_ID) {
     case 31337:
       return anvil;
     case 421614:
       return arbitrumSepolia;
     case 42161:
-    default:
       return arbitrum;
+    default:
+      throw new Error(`Unsupported NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}`);
   }
 }
 
@@ -92,7 +97,9 @@ export async function GET(
     try {
       cartesiNotice = await fetchNoticeByLoanId(loanApplicationId);
     } catch (error) {
-      cartesiError = error instanceof Error ? error.message : 'Failed to fetch from Cartesi';
+      // SECURITY: Log full error internally, return generic message to client
+      console.error('[Verify On-Chain] Cartesi fetch error:', error);
+      cartesiError = 'Failed to fetch from Cartesi';
     }
 
     // Step 2: Check on-chain SimpleLoanPool contract
@@ -137,7 +144,9 @@ export async function GET(
         };
       }
     } catch (error) {
-      onchainError = error instanceof Error ? error.message : 'Failed to read from contract';
+      // SECURITY: Log full error internally, return generic message to client
+      console.error('[Verify On-Chain] Contract read error:', error);
+      onchainError = 'Failed to read from contract';
     }
 
     // Step 3: Determine verification status
@@ -146,13 +155,10 @@ export async function GET(
     // Build explorer URL for the proof hash
     let explorerUrl = null;
     if (onchainData?.proofHash) {
-      const explorerBase = CHAIN_ID === 421614
-        ? 'https://sepolia.arbiscan.io'
-        : CHAIN_ID === 42161
-          ? 'https://arbiscan.io'
-          : null;
-      if (explorerBase) {
-        explorerUrl = `${explorerBase}/address/${SIMPLE_LOAN_POOL_ADDRESS}`;
+      try {
+        explorerUrl = getExplorerUrl('address', SIMPLE_LOAN_POOL_ADDRESS);
+      } catch {
+        // Unsupported chain ID
       }
     }
 
@@ -183,7 +189,6 @@ export async function GET(
       relayService: relayStatus,
       chain: {
         id: CHAIN_ID,
-        rpcUrl: RPC_URL,
       },
     });
   } catch (error) {

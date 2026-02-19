@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useWallets } from '@privy-io/react-auth';
 import { useWalletAuth } from '@/hooks/useWalletAuth';
 import { type Address, createPublicClient, createWalletClient, custom, http, type Hex } from 'viem';
-import { arbitrumSepolia } from 'viem/chains';
+import { arbitrum, arbitrumSepolia } from 'viem/chains';
 import {
   stakingPoolAbi,
   erc20Abi,
@@ -14,17 +13,29 @@ import {
   type UserStakeData,
 } from '@/lib/contracts/stakingPool';
 
+const CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID ? parseInt(process.env.NEXT_PUBLIC_CHAIN_ID, 10) : undefined;
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
+
+function getChain() {
+  switch (CHAIN_ID) {
+    case 421614: return arbitrumSepolia;
+    case 42161: return arbitrum;
+    default: throw new Error(`Unsupported NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}. Must be 421614 (Arbitrum Sepolia) or 42161 (Arbitrum One).`);
+  }
+}
+
 // Create a public client for read operations
 const publicClient = createPublicClient({
-  chain: arbitrumSepolia,
-  transport: http(process.env.NEXT_PUBLIC_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc'),
+  chain: getChain(),
+  transport: http(RPC_URL),
 });
 
 // Debug logging for contract configuration
 if (typeof window !== 'undefined') {
   console.log('[useStakingPool] Contract config:', {
     stakingPoolAddress: STAKING_POOL_ADDRESS,
-    rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc',
+    rpcUrl: RPC_URL,
+    chainId: CHAIN_ID,
   });
 }
 
@@ -57,7 +68,11 @@ export function usePoolDetails(poolId: string | undefined) {
         totalStaked: data[2],
         totalShares: data[3],
         feeRate: data[4],
-        active: data[5],
+        poolCooldownPeriod: data[5],
+        maturityDate: data[6],
+        eligibilityRegistry: data[7],
+        active: data[8],
+        cooldownWaived: data[9],
       });
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch pool'));
@@ -106,11 +121,13 @@ export function useUserStake(poolId: string | undefined) {
       });
 
       setStake({
-        amount: data[0],
-        shares: data[1],
-        stakedAt: data[2],
-        pendingUnstake: data[3],
-        canWithdrawAt: data[4],
+        principal: data[0],
+        amount: data[1],
+        shares: data[2],
+        stakedAt: data[3],
+        pendingUnstake: data[4],
+        canWithdrawAt: data[5],
+        claimedYield: data[6],
       });
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to fetch stake'));
@@ -217,8 +234,8 @@ export function useStakingToken() {
         args: [address],
       });
       setBalance(data);
-    } catch {
-      // Ignore errors
+    } catch (err) {
+      console.error('[useStakingToken] Balance fetch error:', err);
     }
   }, [address, tokenAddress]);
 
@@ -266,7 +283,7 @@ export function useStakingToken() {
  */
 export function useApproveToken() {
   const { tokenAddress, refetchAllowance } = useStakingToken();
-  const { wallets } = useWallets();
+  const { wallet } = useWalletAuth();
   const [txHash, setTxHash] = useState<Hex | undefined>(undefined);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -283,7 +300,6 @@ export function useApproveToken() {
       throw new Error('Staking pool address not configured.');
     }
 
-    const wallet = wallets[0];
     if (!wallet) {
       throw new Error('No wallet connected. Please connect your wallet first.');
     }
@@ -300,12 +316,17 @@ export function useApproveToken() {
     setIsPending(true);
 
     try {
+      // Switch wallet to the correct chain before transacting
+      if (CHAIN_ID) {
+        await wallet.switchChain(CHAIN_ID);
+      }
+
       // Get the ethereum provider from the wallet
       const provider = await wallet.getEthereumProvider();
 
       // Create a wallet client from the provider
       const walletClient = createWalletClient({
-        chain: arbitrumSepolia,
+        chain: getChain(),
         transport: custom(provider),
       });
 
@@ -318,7 +339,7 @@ export function useApproveToken() {
         functionName: 'approve',
         args: [STAKING_POOL_ADDRESS, amount],
         account,
-        chain: arbitrumSepolia,
+        chain: getChain(),
       });
 
       console.log('[useApproveToken] Approval result:', hash);
@@ -343,7 +364,7 @@ export function useApproveToken() {
     } finally {
       setIsPending(false);
     }
-  }, [tokenAddress, wallets, refetchAllowance]);
+  }, [tokenAddress, wallet, refetchAllowance]);
 
   const reset = useCallback(() => {
     setTxHash(undefined);
@@ -368,7 +389,7 @@ export function useApproveToken() {
  * Uses Privy wallet for transaction signing
  */
 export function useStake() {
-  const { wallets } = useWallets();
+  const { wallet } = useWalletAuth();
   const [txHash, setTxHash] = useState<Hex | undefined>(undefined);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -380,7 +401,6 @@ export function useStake() {
       throw new Error('Staking pool address not configured.');
     }
 
-    const wallet = wallets[0];
     if (!wallet) {
       throw new Error('No wallet connected. Please connect your wallet first.');
     }
@@ -400,12 +420,17 @@ export function useStake() {
     setIsPending(true);
 
     try {
+      // Switch wallet to the correct chain before transacting
+      if (CHAIN_ID) {
+        await wallet.switchChain(CHAIN_ID);
+      }
+
       // Get the ethereum provider from the wallet
       const provider = await wallet.getEthereumProvider();
 
       // Create a wallet client from the provider
       const walletClient = createWalletClient({
-        chain: arbitrumSepolia,
+        chain: getChain(),
         transport: custom(provider),
       });
 
@@ -418,7 +443,7 @@ export function useStake() {
         functionName: 'stake',
         args: [hashedId, amount],
         account,
-        chain: arbitrumSepolia,
+        chain: getChain(),
       });
 
       console.log('[useStake] Stake result:', hash);
@@ -442,7 +467,7 @@ export function useStake() {
     } finally {
       setIsPending(false);
     }
-  }, [wallets]);
+  }, [wallet]);
 
   const reset = useCallback(() => {
     setTxHash(undefined);
@@ -467,14 +492,13 @@ export function useStake() {
  * Uses Privy wallet for transaction signing
  */
 export function useRequestUnstake() {
-  const { wallets } = useWallets();
+  const { wallet } = useWalletAuth();
   const [txHash, setTxHash] = useState<Hex | undefined>(undefined);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [isPending, setIsPending] = useState(false);
 
   const requestUnstake = useCallback(async (poolId: string, amount: bigint) => {
-    const wallet = wallets[0];
     if (!wallet) {
       throw new Error('No wallet connected. Please connect your wallet first.');
     }
@@ -493,32 +517,32 @@ export function useRequestUnstake() {
     setIsPending(true);
 
     try {
-      // Get the ethereum provider from the wallet
+      if (CHAIN_ID) {
+        await wallet.switchChain(CHAIN_ID);
+      }
+
       const provider = await wallet.getEthereumProvider();
 
-      // Create a wallet client from the provider
       const walletClient = createWalletClient({
-        chain: arbitrumSepolia,
+        chain: getChain(),
         transport: custom(provider),
       });
 
       const [account] = await walletClient.getAddresses();
 
-      // Send the request unstake transaction
       const hash = await walletClient.writeContract({
         address: STAKING_POOL_ADDRESS,
         abi: stakingPoolAbi,
         functionName: 'requestUnstake',
         args: [hashedId, amount],
         account,
-        chain: arbitrumSepolia,
+        chain: getChain(),
       });
 
       console.log('[useRequestUnstake] Result:', hash);
 
       setTxHash(hash);
 
-      // Wait for confirmation
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
       if (receipt.status === 'success') {
@@ -535,7 +559,7 @@ export function useRequestUnstake() {
     } finally {
       setIsPending(false);
     }
-  }, [wallets]);
+  }, [wallet]);
 
   const reset = useCallback(() => {
     setTxHash(undefined);
@@ -560,14 +584,13 @@ export function useRequestUnstake() {
  * Uses Privy wallet for transaction signing
  */
 export function useCompleteUnstake() {
-  const { wallets } = useWallets();
+  const { wallet } = useWalletAuth();
   const [txHash, setTxHash] = useState<Hex | undefined>(undefined);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [isPending, setIsPending] = useState(false);
 
   const completeUnstake = useCallback(async (poolId: string) => {
-    const wallet = wallets[0];
     if (!wallet) {
       throw new Error('No wallet connected. Please connect your wallet first.');
     }
@@ -585,32 +608,32 @@ export function useCompleteUnstake() {
     setIsPending(true);
 
     try {
-      // Get the ethereum provider from the wallet
+      if (CHAIN_ID) {
+        await wallet.switchChain(CHAIN_ID);
+      }
+
       const provider = await wallet.getEthereumProvider();
 
-      // Create a wallet client from the provider
       const walletClient = createWalletClient({
-        chain: arbitrumSepolia,
+        chain: getChain(),
         transport: custom(provider),
       });
 
       const [account] = await walletClient.getAddresses();
 
-      // Send the complete unstake transaction
       const hash = await walletClient.writeContract({
         address: STAKING_POOL_ADDRESS,
         abi: stakingPoolAbi,
         functionName: 'completeUnstake',
         args: [hashedId],
         account,
-        chain: arbitrumSepolia,
+        chain: getChain(),
       });
 
       console.log('[useCompleteUnstake] Result:', hash);
 
       setTxHash(hash);
 
-      // Wait for confirmation
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
       if (receipt.status === 'success') {
@@ -627,7 +650,7 @@ export function useCompleteUnstake() {
     } finally {
       setIsPending(false);
     }
-  }, [wallets]);
+  }, [wallet]);
 
   const reset = useCallback(() => {
     setTxHash(undefined);
@@ -652,14 +675,13 @@ export function useCompleteUnstake() {
  * Uses Privy wallet for transaction signing
  */
 export function useCancelUnstake() {
-  const { wallets } = useWallets();
+  const { wallet } = useWalletAuth();
   const [txHash, setTxHash] = useState<Hex | undefined>(undefined);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [isPending, setIsPending] = useState(false);
 
   const cancelUnstake = useCallback(async (poolId: string) => {
-    const wallet = wallets[0];
     if (!wallet) {
       throw new Error('No wallet connected. Please connect your wallet first.');
     }
@@ -677,32 +699,32 @@ export function useCancelUnstake() {
     setIsPending(true);
 
     try {
-      // Get the ethereum provider from the wallet
+      if (CHAIN_ID) {
+        await wallet.switchChain(CHAIN_ID);
+      }
+
       const provider = await wallet.getEthereumProvider();
 
-      // Create a wallet client from the provider
       const walletClient = createWalletClient({
-        chain: arbitrumSepolia,
+        chain: getChain(),
         transport: custom(provider),
       });
 
       const [account] = await walletClient.getAddresses();
 
-      // Send the cancel unstake transaction
       const hash = await walletClient.writeContract({
         address: STAKING_POOL_ADDRESS,
         abi: stakingPoolAbi,
         functionName: 'cancelUnstake',
         args: [hashedId],
         account,
-        chain: arbitrumSepolia,
+        chain: getChain(),
       });
 
       console.log('[useCancelUnstake] Result:', hash);
 
       setTxHash(hash);
 
-      // Wait for confirmation
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
       if (receipt.status === 'success') {
@@ -719,7 +741,7 @@ export function useCancelUnstake() {
     } finally {
       setIsPending(false);
     }
-  }, [wallets]);
+  }, [wallet]);
 
   const reset = useCallback(() => {
     setTxHash(undefined);
@@ -733,6 +755,125 @@ export function useCancelUnstake() {
     hash: txHash,
     isPending,
     isConfirming: isPending,
+    isConfirmed,
+    error,
+    reset,
+  };
+}
+
+/**
+ * Hook to get available yield for user in a pool
+ */
+export function useAvailableYield(poolId: string | undefined) {
+  const { address: walletAddress } = useWalletAuth();
+  const address = walletAddress as Address | undefined;
+  const hashedId = poolId ? hashPoolId(poolId) : undefined;
+
+  const [availableYield, setAvailableYield] = useState<bigint>(0n);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const refetch = useCallback(async () => {
+    if (!hashedId || !address) return;
+
+    setIsLoading(true);
+    try {
+      const data = await publicClient.readContract({
+        address: STAKING_POOL_ADDRESS,
+        abi: stakingPoolAbi,
+        functionName: 'getAvailableYield',
+        args: [hashedId, address],
+      });
+      setAvailableYield(data);
+    } catch {
+      setAvailableYield(0n);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [hashedId, address]);
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  return { availableYield, isLoading, refetch };
+}
+
+/**
+ * Hook to claim yield from a pool
+ */
+export function useClaimYield() {
+  const { wallet } = useWalletAuth();
+  const [txHash, setTxHash] = useState<Hex | undefined>(undefined);
+  const [isConfirmed, setIsConfirmed] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [isPending, setIsPending] = useState(false);
+
+  const claimYield = useCallback(async (poolId: string) => {
+    if (!wallet) {
+      throw new Error('No wallet connected. Please connect your wallet first.');
+    }
+
+    const hashedId = hashPoolId(poolId);
+
+    setIsConfirmed(false);
+    setTxHash(undefined);
+    setError(null);
+    setIsPending(true);
+
+    try {
+      if (CHAIN_ID) {
+        await wallet.switchChain(CHAIN_ID);
+      }
+
+      const provider = await wallet.getEthereumProvider();
+
+      const walletClient = createWalletClient({
+        chain: getChain(),
+        transport: custom(provider),
+      });
+
+      const [account] = await walletClient.getAddresses();
+
+      const hash = await walletClient.writeContract({
+        address: STAKING_POOL_ADDRESS,
+        abi: stakingPoolAbi,
+        functionName: 'claimYield',
+        args: [hashedId],
+        account,
+        chain: getChain(),
+      });
+
+      setTxHash(hash);
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+      if (receipt.status === 'success') {
+        setIsConfirmed(true);
+      } else {
+        throw new Error('Transaction failed');
+      }
+
+      return { hash };
+    } catch (err) {
+      console.error('[useClaimYield] Failed:', err);
+      setError(err instanceof Error ? err : new Error('Claim yield failed'));
+      throw err;
+    } finally {
+      setIsPending(false);
+    }
+  }, [wallet]);
+
+  const reset = useCallback(() => {
+    setTxHash(undefined);
+    setIsConfirmed(false);
+    setError(null);
+    setIsPending(false);
+  }, []);
+
+  return {
+    claimYield,
+    hash: txHash,
+    isPending,
     isConfirmed,
     error,
     reset,

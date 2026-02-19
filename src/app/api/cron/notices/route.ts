@@ -103,7 +103,20 @@ export async function GET(req: NextRequest) {
 
       const payload = edge.node.payload;
       const decodedString = Buffer.from(payload.slice(2), 'hex').toString('utf8');
-      const decodedPayload: NoticePayload = JSON.parse(decodedString);
+
+      // SECURITY: Safe JSON.parse with explicit error handling
+      let decodedPayload: NoticePayload;
+      try {
+        decodedPayload = JSON.parse(decodedString);
+      } catch (parseError) {
+        log.error({ noticeId, decodedString: decodedString.slice(0, 200) }, 'Failed to parse notice payload');
+        continue;
+      }
+
+      if (!decodedPayload.loanId || typeof decodedPayload.interestRate !== 'number') {
+        log.error({ noticeId, decodedPayload }, 'Invalid notice payload - missing required fields');
+        continue;
+      }
 
       log.info({ loanId: decodedPayload.loanId, rate: decodedPayload.interestRate }, 'Processing notice');
 

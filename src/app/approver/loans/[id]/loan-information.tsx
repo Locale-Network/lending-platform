@@ -22,6 +22,7 @@ interface Props {
   tokenSymbol?: string;
   loanActive?: boolean;
   loanAmount?: number;
+  /** Interest rate in basis points (e.g., 1500 = 15.00%) */
   loanInterestRate?: number;
   loanRepaymentAmount?: number;
 }
@@ -49,7 +50,9 @@ export default function LoanInformation({
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusStyle}`}
           >
             <span className="ml-1">
-              {loanApplication?.status.replace(/_/g, ' ') ?? 'loading...'}
+              {loanApplication?.status === LoanApplicationStatus.DISBURSED
+                ? 'ACTIVE'
+                : loanApplication?.status.replace(/_/g, ' ') ?? 'loading...'}
             </span>
           </div>
         </div>
@@ -95,15 +98,29 @@ export default function LoanInformation({
             <PercentIcon className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
             <span className="font-medium">Interest Rate:</span>
           </div>
-          <span className="text-sm">{loanInterestRate / 100}%</span>
+          <span className="text-sm">{(loanInterestRate / 100).toFixed(2)}%</span>
         </div>
         <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
           <div className="flex items-center space-x-2">
             <DollarSign className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
-            <span className="font-medium">Loan Amount:</span>
+            <span className="font-medium">
+              {loanApplication?.status === LoanApplicationStatus.APPROVED ||
+               loanApplication?.status === LoanApplicationStatus.DISBURSED ||
+               loanApplication?.status === LoanApplicationStatus.REPAID
+                ? 'Loan Amount:'
+                : 'Requested Amount:'}
+            </span>
           </div>
           <span className="text-sm">
-            {loanAmount} {tokenSymbol}
+            {(loanApplication?.status === LoanApplicationStatus.APPROVED ||
+              loanApplication?.status === LoanApplicationStatus.DISBURSED ||
+              loanApplication?.status === LoanApplicationStatus.REPAID
+                ? loanAmount
+                : loanApplication?.requestedAmount
+                  ? Number(loanApplication.requestedAmount)
+                  : loanAmount
+            ).toLocaleString()}{' '}
+            {tokenSymbol}
           </span>
         </div>
         <div className="flex flex-col space-y-1 sm:flex-row sm:items-center sm:space-x-2 sm:space-y-0">
@@ -111,10 +128,11 @@ export default function LoanInformation({
             <DollarSign className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
             <span className="font-medium">Funds:</span>
           </div>
-          {loanActive && (
+          {loanActive ? (
             <div className="rounded-md bg-green-200 px-2 py-1 text-sm text-green-800">issued</div>
-          )}
-          {!loanActive && (
+          ) : repaymentProgress >= 100 ? (
+            <div className="rounded-md bg-blue-200 px-2 py-1 text-sm text-blue-800">fully repaid</div>
+          ) : (
             <div className="rounded-md bg-gray-200 px-2 py-1 text-sm text-gray-800">not issued</div>
           )}
         </div>

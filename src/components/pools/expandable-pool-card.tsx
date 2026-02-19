@@ -22,9 +22,14 @@ const poolTypeImages: Record<string, string> = {
   DEFAULT: 'https://images.unsplash.com/photo-1528698827591-e19ccd7bc23d?w=800&q=80', // Small shop storefront
 };
 
-// Get image URL for a pool type
+// Get image URL for a pool type (fallback)
 const getPoolImage = (poolType: string): string => {
   return poolTypeImages[poolType] || poolTypeImages.DEFAULT;
+};
+
+// Strip HTML tags for plain text preview
+const stripHtml = (html: string): string => {
+  return html.replace(/<[^>]*>/g, '').trim();
 };
 
 interface Pool {
@@ -39,11 +44,14 @@ interface Pool {
   totalInvestors: number;
   minimumStake: number;
   availableLiquidity: number;
+  imageUrl?: string;
   isFeatured?: boolean;
   isComingSoon?: boolean;
   riskLevel?: string;
   lockupPeriod?: number;
   baseInterestRate?: number;
+  borrowerType?: string;
+  borrowerInterestRate?: number | null;
 }
 
 interface ExpandablePoolCardProps {
@@ -189,7 +197,7 @@ export function ExpandablePoolCard({
             {/* Background Image */}
             <div className="relative h-40">
               <img
-                src={getPoolImage(pool.poolType)}
+                src={pool.imageUrl || getPoolImage(pool.poolType)}
                 alt={pool.name}
                 className="absolute inset-0 w-full h-full object-cover"
               />
@@ -232,14 +240,13 @@ export function ExpandablePoolCard({
                 <CardTitle className="text-lg group-hover:text-primary transition-colors line-clamp-1">
                   {pool.name}
                 </CardTitle>
-                <CardDescription
-                  className="line-clamp-2 text-sm mt-1"
-                  dangerouslySetInnerHTML={{ __html: pool.description }}
-                />
+                <CardDescription className="line-clamp-2 text-sm mt-1">
+                  {stripHtml(pool.description)}
+                </CardDescription>
               </div>
             </CardHeader>
             <CardContent className="pt-0 pb-4 space-y-4">
-              {/* Key Metrics - APY only */}
+              {/* Key Metrics - APY and Borrower Rate */}
               <div className="flex items-center justify-between p-3 bg-gradient-subtle rounded-xl">
                 <div>
                   <p className="text-xs text-muted-foreground mb-0.5">Annual Yield</p>
@@ -249,6 +256,22 @@ export function ExpandablePoolCard({
                     <p className="text-2xl font-bold text-green-600">
                       {pool.annualizedReturn?.toFixed(1) || 'N/A'}
                       <span className="text-base">%</span>
+                    </p>
+                  )}
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground mb-0.5">
+                    {pool.borrowerType === 'SINGLE_BORROWER' ? 'Borrower Rate' : 'Avg Borrower Rate'}
+                  </p>
+                  {pool.isComingSoon ? (
+                    <p className="text-xl font-bold text-purple-600">TBD</p>
+                  ) : (
+                    <p className="text-lg font-semibold text-orange-600">
+                      {pool.borrowerInterestRate
+                        ? `${(pool.borrowerInterestRate / 100).toFixed(1)}%`
+                        : pool.baseInterestRate
+                          ? `${pool.baseInterestRate.toFixed(1)}%`
+                          : 'N/A'}
                     </p>
                   )}
                 </div>
@@ -333,7 +356,7 @@ export function ExpandablePoolCard({
                 <div className="relative h-44">
                   {/* Background image */}
                   <img
-                    src={getPoolImage(pool.poolType)}
+                    src={pool.imageUrl || getPoolImage(pool.poolType)}
                     alt={pool.name}
                     className="absolute inset-0 w-full h-full object-cover object-center"
                   />
@@ -420,13 +443,21 @@ export function ExpandablePoolCard({
                     </div>
                     <div className="p-4 rounded-xl bg-card border">
                       <p className="text-xs text-muted-foreground mb-1">
-                        {pool.isComingSoon ? 'Status' : 'Available Liquidity'}
+                        {pool.isComingSoon
+                          ? 'Status'
+                          : pool.borrowerType === 'SINGLE_BORROWER'
+                            ? 'Borrower Rate'
+                            : 'Avg Borrower Rate'}
                       </p>
                       {pool.isComingSoon ? (
                         <p className="text-xl font-bold text-purple-600">Launching Soon</p>
                       ) : (
-                        <p className="text-2xl font-bold">
-                          ${(pool.availableLiquidity / 1000).toFixed(0)}K
+                        <p className="text-2xl font-bold text-orange-600">
+                          {pool.borrowerInterestRate
+                            ? `${(pool.borrowerInterestRate / 100).toFixed(1)}%`
+                            : pool.baseInterestRate
+                              ? `${pool.baseInterestRate.toFixed(1)}%`
+                              : 'N/A'}
                         </p>
                       )}
                     </div>

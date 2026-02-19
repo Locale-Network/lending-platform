@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { getSession } from '@/lib/auth/authorization';
+import { Role } from '@prisma/client';
+import { checkRateLimit, getClientIp, rateLimits, rateLimitHeaders } from '@/lib/rate-limit';
 
 // Validation schema for creating a document
 const createDocumentSchema = z.object({
@@ -68,6 +71,33 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // SECURITY: Require admin authentication for document creation
+    const session = await getSession();
+    if (!session?.address) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (session.user.role !== Role.ADMIN) {
+      return NextResponse.json(
+        { error: 'Forbidden - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    // SECURITY: Rate limiting on document creation
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `pool-docs:${session.address}`,
+      { limit: 30, windowSeconds: 3600 } // 30 documents per hour
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many document creation requests. Please wait before trying again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
+    }
+
     const { id: poolId } = await params;
     const body = await request.json();
 

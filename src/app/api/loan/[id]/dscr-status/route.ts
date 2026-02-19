@@ -8,6 +8,19 @@ import {
 import { fetchNoticeByLoanId } from '@/services/relay';
 import { createPublicClient, http, parseAbi, type Chain } from 'viem';
 import { arbitrum, arbitrumSepolia } from 'viem/chains';
+import { calculateInterestRateFromDSCR, DEFAULT_INTEREST_RATE_PERCENT } from '@/lib/interest-rate';
+import { subMonths } from 'date-fns';
+import { FundingUrgencyToTermMonths, type FundingUrgencyType } from '@/app/borrower/loans/apply/form-schema';
+import { getExplorerUrl } from '@/lib/explorer';
+
+// In-memory cache for DSCR status to avoid repeated blockchain RPC calls
+// Cache entries expire after 30 seconds
+interface CacheEntry {
+  data: object;
+  timestamp: number;
+}
+const dscrCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 30_000; // 30 seconds
 
 // Local Anvil chain for development
 const anvil: Chain = {
@@ -18,8 +31,8 @@ const anvil: Chain = {
   testnet: true,
 };
 
-const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '421614', 10);
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
+const CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID ? parseInt(process.env.NEXT_PUBLIC_CHAIN_ID, 10) : undefined;
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
 const SIMPLE_LOAN_POOL_ADDRESS = (process.env.SIMPLE_LOAN_POOL_ADDRESS || process.env.NEXT_PUBLIC_LOAN_POOL_ADDRESS) as `0x${string}`;
 
 const SIMPLE_LOAN_POOL_ABI = parseAbi([
@@ -28,11 +41,14 @@ const SIMPLE_LOAN_POOL_ABI = parseAbi([
 ]);
 
 function getChain(): Chain {
+  if (!CHAIN_ID) {
+    throw new Error('NEXT_PUBLIC_CHAIN_ID not configured');
+  }
   switch (CHAIN_ID) {
     case 31337: return anvil;
     case 421614: return arbitrumSepolia;
-    case 42161:
-    default: return arbitrum;
+    case 42161: return arbitrum;
+    default: throw new Error(`Unsupported NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}`);
   }
 }
 
@@ -89,6 +105,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const { id: loanApplicationId } = await params;
 
+    // Check cache first to avoid slow blockchain RPC calls
+    const cacheKey = `${loanApplicationId}:${accountAddress.toLowerCase()}`;
+    const cached = dscrCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      return NextResponse.json(cached.data);
+    }
+
     // Normalize address to lowercase for case-insensitive matching
     const normalizedAddress = accountAddress.toLowerCase();
 
@@ -106,8 +129,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // Use a rolling 3-month window for DSCR calculation (matches zkFetchWrapper)
     const DSCR_WINDOW_MONTHS = 3;
-    const windowStartDate = new Date();
-    windowStartDate.setMonth(windowStartDate.getMonth() - DSCR_WINDOW_MONTHS);
+    // Use date-fns subMonths for correct month arithmetic (handles year boundaries properly)
+    const windowStartDate = subMonths(new Date(), DSCR_WINDOW_MONTHS);
 
     // Verify access to loan application
     const loanApplication = await prisma.loanApplication.findFirst({
@@ -117,7 +140,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           where: {
             isDeleted: false,
             transactionId: { not: null }, // Only include transactions with valid IDs
-            date: { gte: windowStartDate }, // Only include transactions from last 6 months
+            date: { gte: windowStartDate }, // Only include transactions from rolling window
           },
           distinct: ['transactionId'], // Prevent duplicate counting
         },
@@ -146,7 +169,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // In production, this would come from Cartesi verified data
     const transactions = loanApplication.transactions;
 
-    // In Plaid: negative amounts = income, positive = expenses
+    // Plaid transaction sign convention (for /transactions/get and /transactions/sync):
+    // - POSITIVE amounts = money OUT (expenses, debits, purchases)
+    // - NEGATIVE amounts = money IN (income, deposits, refunds)
+    // See: https://plaid.com/docs/api/products/transactions/#transactionsget
     const totalIncome = transactions
       .filter(tx => (tx.amount || 0) < 0)
       .reduce((sum, tx) => sum + Math.abs(tx.amount || 0), 0);
@@ -172,26 +198,36 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const monthlyNoi = (totalIncome - totalExpenses) / monthCount;
 
     // Get loan amount for debt service calculation
-    // Assuming 24-month term at 10% APR for simplified calculation
-    const loanAmount = Number(loanApplication.loanAmount || 1000000000n); // 1000 USDC scaled
-    const monthlyDebtService = (loanAmount * 0.1) / 12 + loanAmount / 24;
+    // USDC has 6 decimals, so we need to scale the BigInt
+    // SAFE RANGE: With 6 decimals, Number conversion is safe up to ~$9 trillion (well beyond practical loan sizes)
+    // NOTE: If supporting 18-decimal tokens, consider dividing BigInt first: Number(rawAmount / 10n ** BigInt(decimals))
+    const TOKEN_DECIMALS = 6;
+    const rawLoanAmount = loanApplication.loanAmount;
+    if (!rawLoanAmount) {
+      return NextResponse.json({
+        verified: false,
+        error: 'Loan amount not set',
+      }, { status: 400 });
+    }
+    const loanAmount = Number(rawLoanAmount) / Math.pow(10, TOKEN_DECIMALS);
+
+    // Calculate monthly debt service using proper amortization formula
+    // Term comes from borrower's funding urgency selection (maps to 12/24/36 months)
+    const termMonths = loanApplication.fundingUrgency
+      ? FundingUrgencyToTermMonths[loanApplication.fundingUrgency as FundingUrgencyType] || 24
+      : 24;
+    const annualRate = DEFAULT_INTEREST_RATE_PERCENT / 100;
+    const monthlyRate = annualRate / 12;
+    const monthlyDebtService = loanAmount > 0
+      ? (loanAmount * monthlyRate * Math.pow(1 + monthlyRate, termMonths)) /
+        (Math.pow(1 + monthlyRate, termMonths) - 1)
+      : 0;
 
     const dscrValue = monthlyDebtService > 0 ? monthlyNoi / monthlyDebtService : 0;
 
-    // Calculate base interest rate based on DSCR (matches relay service calculateInterestRate)
+    // Calculate base interest rate based on DSCR using shared utility
     // Rate tiers based on DSCR (in basis points) - SBA-aligned 9-15% range
-    let baseInterestRate: number;
-    if (dscrValue >= 2.0) {
-      baseInterestRate = 900; // 9% - excellent creditworthiness
-    } else if (dscrValue >= 1.5) {
-      baseInterestRate = 1050; // 10.5% - strong creditworthiness
-    } else if (dscrValue >= 1.25) {
-      baseInterestRate = 1200; // 12% - good creditworthiness
-    } else if (dscrValue >= 1.0) {
-      baseInterestRate = 1350; // 13.5% - acceptable creditworthiness
-    } else {
-      baseInterestRate = 1500; // 15% - high risk
-    }
+    const baseInterestRate = calculateInterestRateFromDSCR(dscrValue);
 
     // Apply LendScore adjustment if available
     const lendScore = loanApplication.lendScore;
@@ -253,7 +289,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         cartesiProof = {
           dscrValue: Math.round(parseFloat(notice.dscr_value) * 1000),
           proofHash: notice.zkfetch_proof_hash,
-          verifiedAt: new Date(notice.calculated_at).toISOString(),
+          // Cartesi returns Unix seconds, relay fallback returns milliseconds
+          // If timestamp < 1e12, it's seconds — convert to milliseconds
+          verifiedAt: new Date(
+            notice.calculated_at < 1e12 ? notice.calculated_at * 1000 : notice.calculated_at
+          ).toISOString(),
           meetsThreshold: notice.meets_threshold,
           verificationId: notice.verification_id,
           pendingRelay: true, // Indicates this is in Cartesi but not yet relayed to chain
@@ -269,13 +309,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // Build explorer URL for the proof
     let explorerUrl = null;
-    if (proofHash && CHAIN_ID === 421614) {
-      explorerUrl = `https://sepolia.arbiscan.io/address/${SIMPLE_LOAN_POOL_ADDRESS}`;
-    } else if (proofHash && CHAIN_ID === 42161) {
-      explorerUrl = `https://arbiscan.io/address/${SIMPLE_LOAN_POOL_ADDRESS}`;
+    if (proofHash) {
+      try {
+        explorerUrl = getExplorerUrl('address', SIMPLE_LOAN_POOL_ADDRESS);
+      } catch {
+        // Unsupported chain ID
+      }
     }
 
-    return NextResponse.json({
+    const responseData = {
       verified: true,
       dscrValue: finalProof?.dscrValue || Math.round(dscrValue * 1000),
       interestRate: finalProof?.interestRate || interestRate,
@@ -292,7 +334,22 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       pendingRelay: cartesiProof?.pendingRelay || false,
       explorerUrl,
       contractAddress: SIMPLE_LOAN_POOL_ADDRESS,
-    });
+    };
+
+    // Cache the successful response
+    dscrCache.set(cacheKey, { data: responseData, timestamp: Date.now() });
+
+    // Clean up old cache entries periodically (every 100 requests)
+    if (dscrCache.size > 100) {
+      const now = Date.now();
+      for (const [key, entry] of dscrCache.entries()) {
+        if (now - entry.timestamp > CACHE_TTL_MS) {
+          dscrCache.delete(key);
+        }
+      }
+    }
+
+    return NextResponse.json(responseData);
   } catch (error) {
     console.error('Error getting DSCR status:', error);
     return NextResponse.json(

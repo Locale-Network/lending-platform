@@ -36,12 +36,8 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is admin
-    const user = await prisma.account.findUnique({
-      where: { address: session.address },
-    });
-
-    if (user?.role !== 'ADMIN') {
+    // Check if user is admin (session.user.role is already populated by getSession)
+    if (session.user.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
@@ -107,12 +103,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is admin
-    const user = await prisma.account.findUnique({
-      where: { address: session.address },
-    });
-
-    if (user?.role !== 'ADMIN') {
+    // Check if user is admin (session.user.role is already populated by getSession)
+    if (session.user.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
@@ -205,12 +197,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is admin
-    const user = await prisma.account.findUnique({
-      where: { address: session.address },
-    });
-
-    if (user?.role !== 'ADMIN') {
+    // Check if user is admin (session.user.role is already populated by getSession)
+    if (session.user.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 

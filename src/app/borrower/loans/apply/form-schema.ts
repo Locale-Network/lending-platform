@@ -38,12 +38,12 @@ export const EstimatedCreditScore = {
 export type EstimatedCreditScoreType =
   (typeof EstimatedCreditScore)[keyof typeof EstimatedCreditScore];
 
-// Display labels for enums
+// Display labels for enums (includes loan term for transparency)
 export const FundingUrgencyLabels: Record<FundingUrgencyType, string> = {
-  within_week: 'Within a week',
-  within_2_weeks: 'Within 2 weeks',
-  within_month: 'Within a month',
-  just_browsing: 'Unsure, just browsing rates',
+  within_week: '12-month term — I need funding within a week',
+  within_2_weeks: '24-month term — I need funding within 2 weeks',
+  within_month: '36-month term — I need funding within a month',
+  just_browsing: '24-month term — Unsure, just browsing rates',
 };
 
 export const LoanPurposeLabels: Record<LoanPurposeType, string> = {
@@ -76,6 +76,27 @@ export const FundingUrgencyToTermMonths: Record<FundingUrgencyType, number> = {
   within_month: 36,
   just_browsing: 24, // default
 };
+
+/**
+ * Calculate estimated monthly payment using standard amortization formula
+ * P * [r(1+r)^n] / [(1+r)^n - 1]
+ *
+ * @param principal - Loan amount in dollars
+ * @param termMonths - Loan term in months
+ * @param annualRatePercent - Annual interest rate as percentage (e.g. 10 for 10%)
+ * @returns Estimated monthly payment in dollars
+ */
+export function calculateMonthlyPayment(
+  principal: number,
+  termMonths: number,
+  annualRatePercent: number = 10,
+): number {
+  if (principal <= 0 || termMonths <= 0) return 0;
+  const monthlyRate = annualRatePercent / 100 / 12;
+  if (monthlyRate === 0) return principal / termMonths;
+  const factor = Math.pow(1 + monthlyRate, termMonths);
+  return (principal * monthlyRate * factor) / (factor - 1);
+}
 
 export const currentLoanSchema = z.object({
   lenderName: z.string().min(1, 'Lender name is required'),

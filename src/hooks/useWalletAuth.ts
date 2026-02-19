@@ -4,6 +4,26 @@ import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useMemo } from 'react';
 
 /**
+ * Get the preferred wallet address from Privy user's linked accounts.
+ * Matches the logic used in privy-wallet-button.tsx to keep addresses consistent.
+ * Prefers embedded wallets (Privy-managed) over external wallets.
+ */
+function getLinkedWalletAddress(user: ReturnType<typeof usePrivy>['user']): string | undefined {
+  if (!user?.linkedAccounts) return undefined;
+
+  const linkedWallets = user.linkedAccounts
+    .filter(account => account.type === 'wallet' && 'address' in account)
+    .map(account => account as { type: 'wallet'; address: string; walletClient?: string });
+
+  if (linkedWallets.length === 0) return undefined;
+
+  const embeddedWallet = linkedWallets.find(w => w.walletClient === 'privy');
+  if (embeddedWallet) return embeddedWallet.address;
+
+  return linkedWallets[0]?.address;
+}
+
+/**
  * Unified wallet authentication hook using Privy
  *
  * This hook provides a consistent interface for wallet authentication.
@@ -13,7 +33,15 @@ export function useWalletAuth() {
   const { user, authenticated, ready, login, logout } = usePrivy();
   const { wallets } = useWallets();
 
-  const primaryWallet = wallets[0];
+  // Use the same address resolution as the header (getLinkedWalletAddress)
+  // to ensure balance queries and transactions use the correct wallet.
+  const linkedAddress = getLinkedWalletAddress(user);
+
+  // Find the matching wallet object for transaction signing
+  const primaryWallet = useMemo(() => {
+    if (!linkedAddress) return wallets[0];
+    return wallets.find(w => w.address.toLowerCase() === linkedAddress.toLowerCase()) || wallets[0];
+  }, [wallets, linkedAddress]);
 
   return useMemo(() => ({
     // Core properties

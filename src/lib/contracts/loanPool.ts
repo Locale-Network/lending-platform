@@ -86,6 +86,16 @@ export const loanPoolAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
+  {
+    type: 'function',
+    name: 'makePartialRepayment',
+    inputs: [
+      { name: '_loanId', type: 'bytes32', internalType: 'bytes32' },
+      { name: '_amount', type: 'uint256', internalType: 'uint256' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
   // Events
   {
     type: 'event',

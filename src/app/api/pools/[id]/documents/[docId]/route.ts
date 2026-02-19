@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { unpinFromPinata } from '@/lib/pinata';
 import { deleteFromSupabaseStorage } from '@/lib/supabase/storage';
+import { getSession } from '@/lib/auth/authorization';
+import { Role, Prisma } from '@prisma/client';
+import { checkRateLimit, getClientIp, rateLimitHeaders } from '@/lib/rate-limit';
 
 // GET - Get a single document
+// Note: Public documents can be fetched without auth, private documents require admin
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; docId: string }> }
@@ -22,6 +26,17 @@ export async function GET(
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
+    // SECURITY: Private documents require admin authentication
+    if (!document.isPublic) {
+      const session = await getSession();
+      if (!session?.address || session.user.role !== Role.ADMIN) {
+        return NextResponse.json(
+          { error: 'Forbidden - Admin access required for private documents' },
+          { status: 403 }
+        );
+      }
+    }
+
     return NextResponse.json({ document });
   } catch (error) {
     console.error('Error fetching document:', error);
@@ -32,12 +47,39 @@ export async function GET(
   }
 }
 
-// PATCH - Update a document
+// PATCH - Update a document (Admin only)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; docId: string }> }
 ) {
   try {
+    // SECURITY: Require admin authentication for document updates
+    const session = await getSession();
+    if (!session?.address) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (session.user.role !== Role.ADMIN) {
+      return NextResponse.json(
+        { error: 'Forbidden - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    // SECURITY: Rate limiting on document updates
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `pool-doc-update:${session.address}`,
+      { limit: 30, windowSeconds: 3600 } // 30 updates per hour
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many update requests. Please wait before trying again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
+    }
+
     const { id: poolId, docId } = await params;
     const body = await request.json();
 
@@ -62,15 +104,15 @@ export async function PATCH(
       'effectiveDate',
       'expirationDate',
       'displayOrder',
-    ];
+    ] as const;
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: Prisma.PoolDocumentUncheckedUpdateInput = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         if (field === 'effectiveDate' || field === 'expirationDate') {
-          updateData[field] = body[field] ? new Date(body[field]) : null;
+          (updateData as Record<string, unknown>)[field] = body[field] ? new Date(body[field]) : null;
         } else {
-          updateData[field] = body[field];
+          (updateData as Record<string, unknown>)[field] = body[field];
         }
       }
     }
@@ -90,12 +132,39 @@ export async function PATCH(
   }
 }
 
-// DELETE - Delete a document
+// DELETE - Delete a document (Admin only)
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; docId: string }> }
 ) {
   try {
+    // SECURITY: Require admin authentication for document deletion
+    const session = await getSession();
+    if (!session?.address) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (session.user.role !== Role.ADMIN) {
+      return NextResponse.json(
+        { error: 'Forbidden - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    // SECURITY: Rate limiting on document deletion
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `pool-doc-delete:${session.address}`,
+      { limit: 20, windowSeconds: 3600 } // 20 deletions per hour
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many delete requests. Please wait before trying again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
+    }
+
     const { id: poolId, docId } = await params;
 
     // Verify document exists and belongs to pool

@@ -3,6 +3,8 @@ import { getSession } from '@/lib/auth/authorization';
 import { fetchCartesiNotices, parseNoticePayload, type DscrVerifiedNotice } from '@/services/relay';
 import { createPublicClient, http, parseAbi, type Chain } from 'viem';
 import { arbitrum, arbitrumSepolia } from 'viem/chains';
+import { getExplorerUrl } from '@/lib/explorer';
+import { DSCR_THRESHOLD } from '@/lib/constants/business';
 
 // Local Anvil chain for development
 const anvil: Chain = {
@@ -13,8 +15,8 @@ const anvil: Chain = {
   testnet: true,
 };
 
-const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '421614', 10);
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
+const CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID ? parseInt(process.env.NEXT_PUBLIC_CHAIN_ID, 10) : undefined;
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
 const SIMPLE_LOAN_POOL_ADDRESS = (process.env.SIMPLE_LOAN_POOL_ADDRESS || process.env.NEXT_PUBLIC_LOAN_POOL_ADDRESS) as `0x${string}`;
 
 const SIMPLE_LOAN_POOL_ABI = parseAbi([
@@ -23,11 +25,14 @@ const SIMPLE_LOAN_POOL_ABI = parseAbi([
 ]);
 
 function getChain(): Chain {
+  if (!CHAIN_ID) {
+    throw new Error('NEXT_PUBLIC_CHAIN_ID not configured');
+  }
   switch (CHAIN_ID) {
     case 31337: return anvil;
     case 421614: return arbitrumSepolia;
-    case 42161:
-    default: return arbitrum;
+    case 42161: return arbitrum;
+    default: throw new Error(`Unsupported NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}`);
   }
 }
 
@@ -40,23 +45,12 @@ function loanIdToBytes32(loanId: string): `0x${string}` {
   return `0x${hex}` as `0x${string}`;
 }
 
-function getExplorerUrl(txHash?: string): string | null {
-  if (!txHash) return null;
-  if (CHAIN_ID === 421614) {
-    return `https://sepolia.arbiscan.io/tx/${txHash}`;
-  } else if (CHAIN_ID === 42161) {
-    return `https://arbiscan.io/tx/${txHash}`;
-  }
-  return null;
-}
-
 function getContractExplorerUrl(): string | null {
-  if (CHAIN_ID === 421614) {
-    return `https://sepolia.arbiscan.io/address/${SIMPLE_LOAN_POOL_ADDRESS}`;
-  } else if (CHAIN_ID === 42161) {
-    return `https://arbiscan.io/address/${SIMPLE_LOAN_POOL_ADDRESS}`;
+  try {
+    return getExplorerUrl('address', SIMPLE_LOAN_POOL_ADDRESS);
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /**
@@ -195,7 +189,7 @@ export async function GET(
           interestRateFormatted: `${(interestRate / 100).toFixed(2)}%`,
           proofHash: decodedProofHash,
           transactionCount: 0, // Not stored on-chain
-          meetsThreshold: dscrValue >= 1250, // 1.25 threshold
+          meetsThreshold: dscrValue >= DSCR_THRESHOLD,
           verifiedAt: new Date(Number(result[3]) * 1000).toISOString(),
           relayedToChain: true,
           explorerUrl: getContractExplorerUrl(),

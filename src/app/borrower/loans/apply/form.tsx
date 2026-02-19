@@ -9,7 +9,7 @@ import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, CheckCircle2, Lock, Shield, CreditCard, Building2 } from 'lucide-react';
+import { Plus, CheckCircle2, Lock, Shield, CreditCard, Building2, Trash2 } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -36,6 +36,16 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   StateMajorCities,
@@ -43,18 +53,20 @@ import {
   BusinessLegalStructure,
   BusinessIndustry,
 } from '@/types/business';
-import { submitDebtServiceProof, submitLoanApplication } from './actions';
+import { submitDebtServiceProof, submitLoanApplication, deleteDraftApplication, saveDraftProgress } from './actions';
 import {
   loanApplicationFormSchema,
   BUSINESS_FOUNDED_YEAR_MAX,
   BUSINESS_FOUNDED_YEAR_MIN,
   FundingUrgency,
   FundingUrgencyLabels,
+  FundingUrgencyToTermMonths,
   LoanPurpose,
   LoanPurposeLabels,
   EstimatedCreditScore,
   CreditScoreLabels,
   LOCALE_DISCLOSURES,
+  calculateMonthlyPayment,
   type FundingUrgencyType,
   type LoanPurposeType,
   type EstimatedCreditScoreType,
@@ -82,6 +94,9 @@ export default function LoanApplicationForm({
   const [step, setStep] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [isSaving, setIsSaving] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const { toast } = useToast();
   const router = useRouter();
@@ -181,6 +196,24 @@ export default function LoanApplicationForm({
     control: form.control,
     name: 'agreedToTerms',
   });
+
+  const watchedLoanAmount = useWatch({
+    control: form.control,
+    name: 'requestedLoanAmount',
+  });
+
+  const watchedFundingUrgency = useWatch({
+    control: form.control,
+    name: 'fundingUrgency',
+  });
+
+  // Calculate estimated monthly payment based on current form selections
+  const estimatedMonthlyPayment = (() => {
+    if (!watchedLoanAmount || !watchedFundingUrgency) return null;
+    const termMonths = FundingUrgencyToTermMonths[watchedFundingUrgency as FundingUrgencyType];
+    if (!termMonths) return null;
+    return calculateMonthlyPayment(watchedLoanAmount, termMonths);
+  })();
 
   async function onSubmit(values: z.infer<typeof loanApplicationFormSchema>) {
     console.log('Submitting loan application:', values);
@@ -321,6 +354,61 @@ export default function LoanApplicationForm({
       return;
     }
 
+    // Save form data to database before proceeding (steps 1, 2, 3, 5 have data to save)
+    // Step 4 (bank) and Step 6 (review) don't need saving here
+    if (step === 1 || step === 2 || step === 3 || step === 5) {
+      setIsSaving(true);
+      try {
+        const values = form.getValues();
+        const saveResult = await saveDraftProgress({
+          loanApplicationId,
+          accountAddress,
+          step,
+          // Step 1 fields
+          businessLegalName: values.businessLegalName,
+          businessAddress: values.businessAddress,
+          businessState: values.businessState,
+          businessCity: values.businessCity,
+          businessZipCode: values.businessZipCode,
+          ein: values.ein,
+          businessFoundedYear: values.businessFoundedYear,
+          businessLegalStructure: values.businessLegalStructure,
+          businessWebsite: values.businessWebsite,
+          businessPrimaryIndustry: values.businessPrimaryIndustry,
+          businessDescription: values.businessDescription,
+          // Step 2 fields
+          poolId: values.poolId,
+          requestedLoanAmount: values.requestedLoanAmount,
+          fundingUrgency: values.fundingUrgency,
+          loanPurpose: values.loanPurpose,
+          // Step 3 fields
+          estimatedCreditScore: values.estimatedCreditScore,
+          // Step 5 fields
+          hasOutstandingLoans: values.hasOutstandingLoans,
+          outstandingLoans: values.outstandingLoans,
+        });
+
+        if (!saveResult.success) {
+          toast({
+            title: 'Failed to save progress',
+            description: saveResult.error || 'Please try again.',
+            variant: 'destructive',
+          });
+          setIsSaving(false);
+          return;
+        }
+      } catch (error) {
+        toast({
+          title: 'Error saving progress',
+          description: 'Please try again.',
+          variant: 'destructive',
+        });
+        setIsSaving(false);
+        return;
+      }
+      setIsSaving(false);
+    }
+
     setStep(step => Math.min(step + 1, totalSteps));
   };
 
@@ -335,21 +423,53 @@ export default function LoanApplicationForm({
     console.log('Plaid link success');
     setPlaidAccessToken(accessToken);
 
-    // Get loan amount from form state (Step 2) - needed for Cartesi loan creation
+    // Get loan amount and term from form state (Step 2) - needed for Cartesi loan creation
     const requestedLoanAmount = form.getValues('requestedLoanAmount');
+    const fundingUrgencyValue = form.getValues('fundingUrgency');
 
     // Submit to zkFetch + Cartesi for DSCR verification
-    // Pass loan amount so Cartesi can create the loan BEFORE DSCR calculation
+    // Pass loan amount and term so Cartesi can create the loan BEFORE DSCR calculation
     submitDebtServiceProof({
       accessToken,
       loanApplicationId,
       requestedLoanAmount: requestedLoanAmount?.toString(),
+      fundingUrgency: fundingUrgencyValue,
     });
   };
 
   const handleDscrVerificationComplete = (verified: boolean) => {
     if (verified) {
       form.setValue('hasDebtServiceProof', true);
+    }
+  };
+
+  const handleDeleteDraft = async () => {
+    setIsDeleting(true);
+    try {
+      const result = await deleteDraftApplication(loanApplicationId, accountAddress);
+
+      if (result.success) {
+        toast({
+          title: 'Draft deleted',
+          description: 'Your draft application has been deleted.',
+        });
+        router.push('/borrower');
+      } else {
+        toast({
+          title: 'Error',
+          description: result.error || 'Failed to delete draft application.',
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'An unexpected error occurred.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
     }
   };
 
@@ -799,6 +919,27 @@ export default function LoanApplicationForm({
                     </FormItem>
                   )}
                 />
+
+                {/* Estimated Monthly Payment */}
+                {estimatedMonthlyPayment !== null && estimatedMonthlyPayment > 0 && (
+                  <div className="rounded-lg border bg-muted/30 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Estimated Monthly Payment</p>
+                        <p className="text-2xl font-bold">
+                          ${estimatedMonthlyPayment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <div className="text-right text-sm text-muted-foreground">
+                        <p>{FundingUrgencyToTermMonths[watchedFundingUrgency as FundingUrgencyType]} months</p>
+                        <p>at ~10% APR</p>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      This is an estimate. Your actual rate will be determined after cash flow verification.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1174,19 +1315,62 @@ export default function LoanApplicationForm({
         </Form>
       </CardContent>
       <CardFooter className="flex justify-between">
-        {step > 1 && step < 7 && (
-          <Button onClick={prevStep} variant="outline">
-            Previous
-          </Button>
-        )}
-        {step === 1 && <div />}
-        {step < 6 && <Button onClick={nextStep}>Continue</Button>}
-        {step === 6 && (
-          <Button disabled={isPending || !agreedToTerms} onClick={form.handleSubmit(onSubmit)}>
-            {isPending ? 'Submitting...' : 'Submit Application'}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {step > 1 && step < 7 && (
+            <Button onClick={prevStep} variant="outline">
+              Previous
+            </Button>
+          )}
+          {/* Delete Draft Button - shown on all steps */}
+          {step <= 6 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => setShowDeleteDialog(true)}
+            >
+              <Trash2 className="mr-1 h-4 w-4" />
+              Delete Draft
+            </Button>
+          )}
+        </div>
+        <div>
+          {step < 6 && (
+            <Button onClick={nextStep} disabled={isSaving}>
+              {isSaving ? 'Saving...' : 'Save & Continue'}
+            </Button>
+          )}
+          {step === 6 && (
+            <Button disabled={isPending || !agreedToTerms} onClick={form.handleSubmit(onSubmit)}>
+              {isPending ? 'Submitting...' : 'Submit Application'}
+            </Button>
+          )}
+        </div>
       </CardFooter>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete draft application?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete your draft loan application and all entered information.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteDraft}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

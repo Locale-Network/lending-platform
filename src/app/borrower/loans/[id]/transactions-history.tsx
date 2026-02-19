@@ -21,6 +21,7 @@ import {
   TrendingDown,
   CloudDownload,
 } from 'lucide-react';
+import { getExplorerUrl } from '@/lib/explorer';
 
 interface TransactionsHistoryProps {
   loanApplicationId: string;
@@ -638,7 +639,7 @@ export default function TransactionsHistory({
                               )}
                               <span>•</span>
                               <a
-                                href={`https://sepolia.arbiscan.io/tx/${transfer.hash}`}
+                                href={getExplorerUrl('tx', transfer.hash)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-1 hover:underline"

@@ -16,25 +16,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
-    // Get all pools for calculations
-    const pools = await prisma.loanPool.findMany({
-      select: {
-        status: true,
-        totalStaked: true,
-        totalInvestors: true,
-        annualizedReturn: true,
-        _count: {
-          select: {
-            loans: true,
+    // Run pool queries and real aggregation in parallel
+    const [pools, realTVL, uniqueInvestors] = await Promise.all([
+      prisma.loanPool.findMany({
+        select: {
+          status: true,
+          annualizedReturn: true,
+          _count: {
+            select: {
+              loans: true,
+            },
+          },
+          loans: {
+            select: {
+              principal: true,
+            },
           },
         },
-        loans: {
-          select: {
-            principal: true,
-          },
-        },
-      },
-    });
+      }),
+      // Real TVL from InvestorStake (source of truth)
+      prisma.investorStake.aggregate({
+        where: { status: 'ACTIVE' },
+        _sum: { stakedAmount: true },
+      }),
+      // Unique investors across all pools
+      prisma.investorStake.findMany({
+        where: { status: 'ACTIVE' },
+        distinct: ['investorAddress'],
+        select: { investorAddress: true },
+      }),
+    ]);
 
     // Calculate statistics
     const stats = {
@@ -44,9 +55,9 @@ export async function GET(request: NextRequest) {
       pausedPools: pools.filter(p => p.status === 'PAUSED').length,
       closedPools: pools.filter(p => p.status === 'CLOSED').length,
 
-      totalValueLocked: pools.reduce((sum, pool) => sum + pool.totalStaked, 0),
+      totalValueLocked: realTVL._sum.stakedAmount || 0,
 
-      totalInvestors: pools.reduce((sum, pool) => sum + pool.totalInvestors, 0),
+      totalInvestors: uniqueInvestors.length,
 
       averageAPY:
         pools.filter(p => p.annualizedReturn !== null).length > 0

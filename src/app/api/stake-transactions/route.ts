@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Contract, JsonRpcProvider, EventLog } from 'ethers';
+import prisma from '@prisma/index';
+import { stakingPoolAbi } from '@/lib/contracts/stakingPool';
 import { isValidEthereumAddress } from '@/lib/validation';
+import { USDC_DECIMALS, DEFAULT_BLOCK_LOOKBACK } from '@/lib/constants/business';
+
+const TOKEN_DECIMALS = USDC_DECIMALS;
 
 /**
- * Get user's staking transactions from the blockchain via Alchemy
+ * Get user's staking transactions from blockchain events
  * @route GET /api/stake-transactions?address=0x...
  *
- * This pulls data directly from on-chain - no local database needed.
- * Shows the user's direct interactions with the staking pool contracts.
+ * Queries Staked/Unstaked/UnstakeRequested events filtered by user address,
+ * then resolves pool names from the database via contractPoolId.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -20,7 +26,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Validate Ethereum address format
     if (!isValidEthereumAddress(userAddress)) {
       return NextResponse.json(
         { error: 'Invalid Ethereum address format' },
@@ -29,9 +34,9 @@ export async function GET(request: NextRequest) {
     }
 
     const stakingPoolAddress = process.env.NEXT_PUBLIC_STAKING_POOL_ADDRESS;
-    const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
+    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
 
-    if (!stakingPoolAddress || !apiKey) {
+    if (!stakingPoolAddress || !rpcUrl) {
       return NextResponse.json({
         transactions: [],
         pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasMore: false },
@@ -39,98 +44,118 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Fetch transfers FROM user TO staking pool (stakes)
-    const stakesResponse = await fetch(`https://arb-sepolia.g.alchemy.com/v2/${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'alchemy_getAssetTransfers',
-        params: [{
-          fromBlock: '0x0',
-          toBlock: 'latest',
-          fromAddress: userAddress,
-          toAddress: stakingPoolAddress,
-          category: ['erc20'],
-          withMetadata: true,
-          excludeZeroValue: true,
-          maxCount: '0x64', // 100 results
-        }]
-      })
-    });
+    const provider = new JsonRpcProvider(rpcUrl);
+    const contract = new Contract(stakingPoolAddress, stakingPoolAbi, provider);
 
-    // Fetch transfers FROM staking pool TO user (unstakes/withdrawals)
-    const unstakesResponse = await fetch(`https://arb-sepolia.g.alchemy.com/v2/${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'alchemy_getAssetTransfers',
-        params: [{
-          fromBlock: '0x0',
-          toBlock: 'latest',
-          fromAddress: stakingPoolAddress,
-          toAddress: userAddress,
-          category: ['erc20'],
-          withMetadata: true,
-          excludeZeroValue: true,
-          maxCount: '0x64',
-        }]
-      })
-    });
+    // Query last ~5M blocks for this user's events
+    // Arbitrum produces blocks every ~0.25s, so 5M blocks ≈ ~14 days of history
+    const currentBlock = await provider.getBlockNumber();
+    const fromBlock = Math.max(0, currentBlock - DEFAULT_BLOCK_LOOKBACK);
 
-    const [stakesData, unstakesData] = await Promise.all([
-      stakesResponse.json(),
-      unstakesResponse.json()
+    // Filter by user address (second indexed topic)
+    const [stakedEvents, unstakeRequestedEvents, unstakedEvents] = await Promise.all([
+      contract.queryFilter(contract.filters.Staked(null, userAddress), fromBlock, currentBlock),
+      contract.queryFilter(contract.filters.UnstakeRequested(null, userAddress), fromBlock, currentBlock),
+      contract.queryFilter(contract.filters.Unstaked(null, userAddress), fromBlock, currentBlock),
     ]);
 
-    // Parse amount from transfer
-    const parseAmount = (tx: any): number => {
-      let amount = tx.value || 0;
-      if (amount === 0 && tx.rawContract?.value) {
-        const rawValue = parseInt(tx.rawContract.value, 16);
-        const decimals = parseInt(tx.rawContract.decimal, 16) || 6;
-        amount = rawValue / Math.pow(10, decimals);
-      }
-      return amount;
-    };
+    // Collect unique poolIds to resolve names
+    const poolIdSet = new Set<string>();
+    for (const e of [...stakedEvents, ...unstakeRequestedEvents, ...unstakedEvents]) {
+      if ('args' in e) poolIdSet.add((e as EventLog).args[0]);
+    }
 
-    // Transform stakes (user -> pool)
-    const stakes = (stakesData.result?.transfers || []).map((tx: any, index: number) => ({
-      id: `${tx.hash}-stake-${index}`,
-      type: 'stake',
-      status: 'completed',
-      amount: parseAmount(tx),
-      transaction_hash: tx.hash,
-      block_number: tx.blockNum,
-      created_at: tx.metadata?.blockTimestamp || new Date().toISOString(),
-      investor_address: tx.from,
-      pool: {
-        name: 'Real Estate Bridge Lending',
-        slug: 'real-estate-bridge',
+    // Resolve pool names from DB
+    const poolMap = new Map<string, { name: string; slug: string }>();
+    if (poolIdSet.size > 0) {
+      const pools = await prisma.loanPool.findMany({
+        where: { contractPoolId: { in: Array.from(poolIdSet) } },
+        select: { contractPoolId: true, name: true, slug: true },
+      });
+      for (const p of pools) {
+        if (p.contractPoolId) {
+          poolMap.set(p.contractPoolId, { name: p.name, slug: p.slug });
+        }
       }
-    }));
+    }
 
-    // Transform unstakes (pool -> user)
-    const unstakes = (unstakesData.result?.transfers || []).map((tx: any, index: number) => ({
-      id: `${tx.hash}-unstake-${index}`,
-      type: 'unstake',
-      status: 'completed',
-      amount: parseAmount(tx),
-      transaction_hash: tx.hash,
-      block_number: tx.blockNum,
-      created_at: tx.metadata?.blockTimestamp || new Date().toISOString(),
-      investor_address: tx.to,
-      pool: {
-        name: 'Real Estate Bridge Lending',
-        slug: 'real-estate-bridge',
-      }
-    }));
+    // Get block timestamps
+    const blockNumbers = new Set<number>();
+    for (const e of [...stakedEvents, ...unstakeRequestedEvents, ...unstakedEvents]) {
+      blockNumbers.add(e.blockNumber);
+    }
+    const blockTimestamps = new Map<number, string>();
+    await Promise.all(
+      Array.from(blockNumbers).map(async (bn) => {
+        const block = await provider.getBlock(bn);
+        if (block) {
+          blockTimestamps.set(bn, new Date(block.timestamp * 1000).toISOString());
+        }
+      })
+    );
 
-    // Combine and sort by timestamp (newest first)
-    const transactions = [...stakes, ...unstakes]
+    const formatAmount = (raw: bigint): number =>
+      Number(raw) / Math.pow(10, TOKEN_DECIMALS);
+
+    // Only show events from pools that exist in the DB (filters out old test pools)
+    const isKnownPool = (e: EventLog) => poolMap.has(e.args[0]);
+
+    // Transform events
+    const stakes = stakedEvents
+      .filter((e): e is EventLog => 'args' in e)
+      .filter(isKnownPool)
+      .map((e) => {
+        const pool = poolMap.get(e.args[0])!;
+        return {
+          id: `${e.transactionHash}-stake-${e.index}`,
+          type: 'stake',
+          status: 'completed',
+          amount: formatAmount(e.args[2]),
+          transaction_hash: e.transactionHash,
+          block_number: e.blockNumber,
+          created_at: blockTimestamps.get(e.blockNumber) || new Date().toISOString(),
+          investor_address: e.args[1],
+          pool: { name: pool.name, slug: pool.slug },
+        };
+      });
+
+    const unstakeRequests = unstakeRequestedEvents
+      .filter((e): e is EventLog => 'args' in e)
+      .filter(isKnownPool)
+      .map((e) => {
+        const pool = poolMap.get(e.args[0])!;
+        return {
+          id: `${e.transactionHash}-unstake_request-${e.index}`,
+          type: 'unstake_request',
+          status: 'completed',
+          amount: formatAmount(e.args[2]),
+          transaction_hash: e.transactionHash,
+          block_number: e.blockNumber,
+          created_at: blockTimestamps.get(e.blockNumber) || new Date().toISOString(),
+          investor_address: e.args[1],
+          pool: { name: pool.name, slug: pool.slug },
+        };
+      });
+
+    const unstakes = unstakedEvents
+      .filter((e): e is EventLog => 'args' in e)
+      .filter(isKnownPool)
+      .map((e) => {
+        const pool = poolMap.get(e.args[0])!;
+        return {
+          id: `${e.transactionHash}-unstake-${e.index}`,
+          type: 'unstake',
+          status: 'completed',
+          amount: formatAmount(e.args[2]),
+          transaction_hash: e.transactionHash,
+          block_number: e.blockNumber,
+          created_at: blockTimestamps.get(e.blockNumber) || new Date().toISOString(),
+          investor_address: e.args[1],
+          pool: { name: pool.name, slug: pool.slug },
+        };
+      });
+
+    const transactions = [...stakes, ...unstakeRequests, ...unstakes]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     return NextResponse.json({

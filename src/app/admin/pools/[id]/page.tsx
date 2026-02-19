@@ -311,10 +311,6 @@ export default function ManagePoolPage() {
               <p className="text-lg font-mono">{pool.slug}</p>
             </div>
           </div>
-          <div>
-            <p className="text-sm font-medium text-muted-foreground mb-2">Description</p>
-            <div className="text-sm" dangerouslySetInnerHTML={{ __html: pool.description || '' }} />
-          </div>
         </CardContent>
       </Card>
 

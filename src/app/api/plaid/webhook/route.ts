@@ -164,10 +164,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse the webhook payload
-    const payload: PlaidWebhookPayload = JSON.parse(rawBody);
+    // SECURITY: Parse the webhook payload with explicit error handling
+    // Malformed JSON should return 400, not trigger an unhandled exception
+    let payload: PlaidWebhookPayload;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch (parseError) {
+      log.error({ err: parseError }, 'Invalid JSON in webhook body');
+      return NextResponse.json(
+        { error: 'Invalid JSON payload' },
+        { status: 400 }
+      );
+    }
 
     // Validate required fields
+    if (!payload || typeof payload !== 'object') {
+      log.error('Payload is not an object');
+      return NextResponse.json(
+        { error: 'Invalid webhook payload' },
+        { status: 400 }
+      );
+    }
+
     if (!payload.webhook_type || !payload.webhook_code || !payload.item_id) {
       log.error('Invalid payload - missing required fields');
       return NextResponse.json(

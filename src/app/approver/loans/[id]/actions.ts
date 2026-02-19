@@ -10,7 +10,9 @@ import {
   approveLoan as approverApproveLoan,
   disburseLoan as approverDisburseLoan,
 } from '@/app/approver/actions';
-import { LoanApplicationStatus } from '@prisma/client';
+import { getLoanActive, getLoanAmount } from '@/services/contracts/creditTreasuryPool';
+import { LoanApplicationStatus, Role } from '@prisma/client';
+import { getSession } from '@/lib/auth/authorization';
 import { revalidatePath } from 'next/cache';
 
 interface GetLoanApplicationResponse {
@@ -93,4 +95,64 @@ export const disburseLoan = async (args: {
     loanApplicationId: args.loanApplicationId,
     accountAddress: args.accountAddress,
   });
+};
+
+/**
+ * Close a fully repaid loan (ADMIN ONLY)
+ *
+ * Verifies on-chain that the loan is no longer active (fully repaid),
+ * then transitions the database status from DISBURSED to REPAID.
+ */
+export const closeLoan = async (args: {
+  accountAddress: string;
+  loanApplicationId: string;
+}): Promise<UpdateLoanApplicationStatusResponse> => {
+  try {
+    const { accountAddress, loanApplicationId } = args;
+    await validateApproverRequest(accountAddress);
+
+    const session = await getSession();
+    if (session?.user.role !== Role.ADMIN) {
+      throw new Error('Only ADMIN can close loans');
+    }
+
+    // Verify the loan is fully repaid on-chain
+    const loanActive = await getLoanActive(loanApplicationId);
+    const onChainAmount = await getLoanAmount(loanApplicationId);
+
+    if (loanActive) {
+      throw new Error('Loan is still active on-chain. It must be fully repaid before closing.');
+    }
+
+    if (Number(onChainAmount) === 0) {
+      throw new Error('Loan does not exist on-chain.');
+    }
+
+    // Fetch the current loan to verify status
+    const loan = await dbGetLoanApplication({ loanApplicationId });
+    if (!loan) {
+      throw new Error(`Loan application ${loanApplicationId} not found`);
+    }
+
+    if (loan.status !== LoanApplicationStatus.DISBURSED) {
+      throw new Error(`Cannot close loan with status: ${loan.status}. Only DISBURSED loans can be closed.`);
+    }
+
+    // Update database status to REPAID
+    await dbUpdateLoanApplication({
+      loanApplicationId,
+      loanApplication: { status: LoanApplicationStatus.REPAID },
+    });
+
+    revalidatePath(`/approver/loans/${loanApplicationId}`);
+    revalidatePath('/approver');
+    revalidatePath('/admin');
+
+    return { isError: false };
+  } catch (error) {
+    return {
+      isError: true,
+      errorMessage: error instanceof Error ? error.message : 'Failed to close loan',
+    };
+  }
 };

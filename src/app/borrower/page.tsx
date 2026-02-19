@@ -1,12 +1,11 @@
 import { Suspense } from 'react';
 import Search from '@/components/custom/url-search';
-import Table from '@/components/custom/data-table';
-import { columns } from './loans/columns';
 import { getLoanApplications } from './loans/actions';
 import { getSession } from '@/lib/auth/authorization';
 import ApplyLoanCard from './apply-loan-card';
 import { Card, CardContent } from '@/components/ui/card';
 import { FileText } from 'lucide-react';
+import { LoansTableWithActions } from './loans/loans-table-with-actions';
 
 export default async function Page(
   props: {
@@ -64,11 +63,9 @@ export default async function Page(
           </div>
         </div>
 
-        <Suspense key={query + currentPage}>
-          <Table
-            rows={loanApplications || []}
-            columns={columns}
-            total={loanApplications?.length || 0}
+        <Suspense key={query + currentPage + (loanApplications?.map(l => l.id).join(',') || '')}>
+          <LoansTableWithActions
+            loans={loanApplications || []}
             totalPages={Math.ceil((loanApplications?.length || 0) / 10)}
           />
         </Suspense>

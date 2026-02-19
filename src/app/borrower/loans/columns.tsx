@@ -5,12 +5,14 @@ import { ColumnDef } from '@tanstack/react-table';
 import Link from 'next/link';
 import { getLoanStatusStyle } from '@/utils/colour';
 import { formatDateToUS } from '@/utils/date';
+import { LoanActionsCell } from './loan-actions-cell';
 
 export type LoanApplicationsForTable = {
   id: string;
   status: LoanApplicationStatus;
   createdDate: Date;
   updatedDate: Date;
+  accountAddress: string;
 };
 
 export const columns: ColumnDef<LoanApplicationsForTable>[] = [
@@ -61,5 +63,10 @@ export const columns: ColumnDef<LoanApplicationsForTable>[] = [
     accessorKey: 'updatedDate',
     header: 'Updated Date',
     cell: ({ row }) => <div>{formatDateToUS(row.getValue('updatedDate'))}</div>,
+  },
+  {
+    id: 'actions',
+    header: '',
+    cell: ({ row }) => <LoanActionsCell loan={row.original} />,
   },
 ];

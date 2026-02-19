@@ -1,12 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadToSupabaseStorage } from '@/lib/supabase/storage';
 import { uploadBufferToPinata } from '@/lib/pinata';
+import { getSession } from '@/lib/auth/authorization';
+import { checkRateLimit, getClientIp, rateLimitHeaders } from '@/lib/rate-limit';
+import { Role } from '@prisma/client';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = ['application/pdf'];
 
 export async function POST(request: NextRequest) {
   try {
+    // SECURITY: Require authentication
+    const session = await getSession();
+    if (!session?.address) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // SECURITY: Only admins can upload pool documents
+    if (session.user.role !== Role.ADMIN) {
+      return NextResponse.json(
+        { error: 'Forbidden: Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    // SECURITY: Rate limiting on file uploads
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `upload:${session.address.toLowerCase()}`,
+      { limit: 20, windowSeconds: 3600 } // 20 uploads per hour
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many upload requests. Please wait before trying again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const poolId = formData.get('poolId') as string | null;

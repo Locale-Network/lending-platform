@@ -24,9 +24,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
-    // Get query parameters
+    // Get query parameters with validation
     const searchParams = request.nextUrl.searchParams;
-    const limit = parseInt(searchParams.get('limit') || '20');
+    // SECURITY: Validate pagination parameters to prevent DoS and ensure bounds
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10) || 20));
 
     // Fetch recent stake transactions
     const { data: transactions, error: txError } = await supabase

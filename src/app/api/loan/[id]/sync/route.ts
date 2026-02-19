@@ -89,8 +89,8 @@ export async function POST(
     // Decrypt the access token before use
     const accessToken = decryptField(encryptedToken);
 
-    // Check if sync was done recently (within last 1 minute - reduced for development)
-    const syncCooldownMs = 1 * 60 * 1000; // 1 minute for dev, increase to 5 for production
+    // Check if sync was done recently (within last 5 minutes)
+    const syncCooldownMs = 5 * 60 * 1000;
     const cooldownAgo = new Date(Date.now() - syncCooldownMs);
     if (loanApplication.lastSyncedAt && loanApplication.lastSyncedAt > cooldownAgo) {
       const nextSyncAvailable = new Date(loanApplication.lastSyncedAt.getTime() + syncCooldownMs);

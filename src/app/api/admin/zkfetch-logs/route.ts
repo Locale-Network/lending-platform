@@ -33,11 +33,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Parse query params
+    // Parse query params with validation
     const { searchParams } = new URL(request.url);
     const view = searchParams.get('view') || 'logs';
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    // SECURITY: Validate pagination parameters to prevent DoS and ensure bounds
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50));
     const action = searchParams.get('action') as ZkFetchAction | null;
     const successParam = searchParams.get('success');
     const success = successParam === 'true' ? true : successParam === 'false' ? false : undefined;

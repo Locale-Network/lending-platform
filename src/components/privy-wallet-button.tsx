@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { Loader2, LogOut, Settings, Wallet } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { getStakingTokenBalanceAction } from '@/app/actions/token';
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ROLE_REDIRECTS } from '@/app/api/auth/auth-pages';
 import { Role } from '@prisma/client';
+import { WalletModal } from '@/components/wallet-modal';
 
 interface PrivyWalletButtonProps {
   label?: string;
@@ -140,7 +141,9 @@ export default function PrivyWalletButton({
   label = 'Connect Wallet',
   signInScreen = false,
 }: PrivyWalletButtonProps) {
-  const { login, logout, ready, authenticated, user } = usePrivy();
+  const { login, logout, ready, authenticated, user, getAccessToken } = usePrivy();
+  const { wallets } = useWallets();
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [balance, setBalance] = useState<number>(0);
   const [tokenSymbol, setTokenSymbol] = useState<string>('USDC');
   const [isSyncing, setIsSyncing] = useState(false);
@@ -184,9 +187,16 @@ export default function PrivyWalletButton({
         })),
       });
 
+      // Get the Privy access token to send as Authorization header
+      // This is more reliable than relying on the privy-token cookie
+      const accessToken = await getAccessToken();
+
       const response = await fetch('/api/auth/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           address,
           privyUserId,
@@ -209,6 +219,14 @@ export default function PrivyWalletButton({
           return;
         }
 
+        // Handle 429 rate limit - stop retrying to prevent infinite loop
+        if (response.status === 429) {
+          console.warn('[PrivyWallet] Rate limited, will not retry automatically');
+          setHasSynced(true); // Prevent retry loop
+          setIsSyncing(false);
+          return;
+        }
+
         // Handle 409 Conflict - account exists with different wallet
         if (response.status === 409) {
           console.error('[PrivyWallet] Wallet conflict detected:', errorData.message);
@@ -217,7 +235,8 @@ export default function PrivyWalletButton({
           await logout();
         }
 
-        syncingRef.current = false; // Reset ref on error so retry is possible
+        // For other errors (401, 400, 500), don't retry — mark as attempted
+        setHasSynced(true);
         setIsSyncing(false);
         return;
       }
@@ -243,10 +262,11 @@ export default function PrivyWalletButton({
       setIsSyncing(false);
     } catch (error) {
       console.error('[PrivyWallet] Failed to sync auth:', error);
-      syncingRef.current = false; // Reset ref on error so retry is possible
+      // Don't reset syncingRef — prevents infinite retry loop on persistent errors
+      setHasSynced(true);
       setIsSyncing(false);
     }
-  }, [address, user]);
+  }, [address, user, getAccessToken]);
 
   // Load auth state from sessionStorage on mount (before sync check)
   useEffect(() => {
@@ -383,55 +403,75 @@ export default function PrivyWalletButton({
     const shortenedAddress = `${address.slice(0, 4)}...${address.slice(-4)}`;
 
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-0 rounded-full bg-white hover:bg-gray-50 transition-all duration-200 cursor-pointer border border-gray-200 shadow-soft hover:shadow-md">
-            <div className="hidden md:flex items-center gap-2 pl-3 pr-3 py-2">
-              <img src="/usdc-logo.png" alt="USDC" className="w-5 h-5 rounded-full" />
-              <span className="text-sm font-semibold text-gray-900">
-                {balance.toFixed(2)} {tokenSymbol}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 bg-gray-100 rounded-full px-3 py-2 mr-0.5">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-sm font-mono text-gray-600">{shortenedAddress}</span>
-            </div>
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56 glass-subtle shadow-soft-lg border-border/50 animate-fade-in-up">
-          <DropdownMenuLabel className="text-xs text-muted-foreground">My Account</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem className="font-mono text-xs text-muted-foreground cursor-default">{shortenedAddress}</DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => {
-              // Use role-aware navigation - BORROWER uses /borrower/account, others use /explore/portfolio
-              const path = authState?.role === 'BORROWER' ? '/borrower/account' : '/explore/portfolio';
-              router.push(path);
-            }}
-            className="cursor-pointer transition-colors duration-150"
-          >
-            <Wallet className="mr-2 h-4 w-4" />
-            {authState?.role === 'BORROWER' ? 'Account' : 'Portfolio'}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => {
-              // Use role-aware navigation - BORROWER uses /borrower/account, others use /explore/settings
-              const path = authState?.role === 'BORROWER' ? '/borrower/account' : '/explore/settings';
-              router.push(path);
-            }}
-            className="cursor-pointer transition-colors duration-150"
-          >
-            <Settings className="mr-2 h-4 w-4" />
-            Settings
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleDisconnect} className="text-destructive focus:text-destructive focus:bg-destructive/10 transition-colors duration-150">
-            <LogOut className="mr-2 h-4 w-4" />
-            Disconnect
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-0 rounded-full bg-white hover:bg-gray-50 transition-all duration-200 cursor-pointer border border-gray-200 shadow-soft hover:shadow-md">
+              <div className="hidden md:flex items-center gap-2 pl-3 pr-3 py-2">
+                <img src="/usdc-logo.png" alt="USDC" className="w-5 h-5 rounded-full" />
+                <span className="text-sm font-semibold text-gray-900">
+                  {balance.toFixed(2)} {tokenSymbol}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-100 rounded-full px-3 py-2 mr-0.5">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-sm font-mono text-gray-600">{shortenedAddress}</span>
+              </div>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56 glass-subtle shadow-soft-lg border-border/50 animate-fade-in-up">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">My Account</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="font-mono text-xs text-muted-foreground cursor-default">{shortenedAddress}</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => {
+                // Use role-aware navigation - BORROWER uses /borrower/account, others use /explore/portfolio
+                const path = authState?.role === 'BORROWER' ? '/borrower/account' : '/explore/portfolio';
+                router.push(path);
+              }}
+              className="cursor-pointer transition-colors duration-150"
+            >
+              <Wallet className="mr-2 h-4 w-4" />
+              {authState?.role === 'BORROWER' ? 'Account' : 'Portfolio'}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                // Use role-aware navigation - BORROWER uses /borrower/account, others use /explore/settings
+                const path = authState?.role === 'BORROWER' ? '/borrower/account' : '/explore/settings';
+                router.push(path);
+              }}
+              className="cursor-pointer transition-colors duration-150"
+            >
+              <Settings className="mr-2 h-4 w-4" />
+              Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                // Delay dialog open to avoid DropdownMenu/Dialog pointer-events race condition.
+                // Without this, the body can be left with pointer-events: none after closing.
+                setTimeout(() => setWalletModalOpen(true), 10);
+              }}
+              className="cursor-pointer transition-colors duration-150"
+            >
+              <Wallet className="mr-2 h-4 w-4" />
+              Manage Wallet
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleDisconnect} className="text-destructive focus:text-destructive focus:bg-destructive/10 transition-colors duration-150">
+              <LogOut className="mr-2 h-4 w-4" />
+              Disconnect
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <WalletModal
+          open={walletModalOpen}
+          onOpenChange={setWalletModalOpen}
+          address={address}
+          balance={balance}
+          tokenSymbol={tokenSymbol}
+        />
+      </>
     );
   }
 

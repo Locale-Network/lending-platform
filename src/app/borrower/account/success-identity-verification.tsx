@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useWalletAuth } from '@/hooks/useWalletAuth';
 import { updateEmailAction, getAccountEmailAction } from '@/app/actions/account';
+import { getExplorerUrl } from '@/lib/explorer';
 
 interface SuccessIdentityVerificationProps {
   accountAddress: string;
@@ -113,7 +114,7 @@ function VerificationStatusCard({
                   Token ID: {borrowerNFTTokenId}
                 </Badge>
                 <a
-                  href={`https://sepolia.arbiscan.io/token/${borrowerCredentialAddress}?a=${borrowerNFTTokenId}`}
+                  href={`${getExplorerUrl('token', borrowerCredentialAddress)}?a=${borrowerNFTTokenId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm text-primary hover:underline flex items-center gap-1"
@@ -314,7 +315,7 @@ function AccountSettings({ accountAddress }: { accountAddress: string }) {
               asChild
             >
               <a
-                href={`https://sepolia.arbiscan.io/address/${accountAddress}`}
+                href={getExplorerUrl('address', accountAddress)}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -623,7 +624,7 @@ function WalletSettings() {
                   asChild
                 >
                   <a
-                    href={`https://sepolia.arbiscan.io/address/${address}`}
+                    href={getExplorerUrl('address', address)}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

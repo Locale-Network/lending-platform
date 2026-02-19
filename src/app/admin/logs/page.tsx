@@ -45,22 +45,18 @@ import { useToast } from '@/hooks/use-toast';
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-// Action badge colors
+// Action badge colors - neutral styling
 const actionColors: Record<string, string> = {
-  sync: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-  verify: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
-  submit: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
-  relay: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  sync: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+  verify: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+  submit: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+  relay: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
 };
 
-// Status badge component
+// Status badge component - neutral styling
 const StatusBadge = ({ success }: { success: boolean }) => (
   <Badge
-    className={
-      success
-        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-        : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-    }
+    className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
   >
     {success ? (
       <CheckCircle className="h-3 w-3 mr-1" />
@@ -158,86 +154,86 @@ export default function ZkFetchLogsPage() {
       {/* Stats Cards */}
       {stats && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/20 dark:to-blue-900/10 border-blue-200 dark:border-blue-800">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              <CardTitle className="text-sm font-medium">
                 Total Operations
               </CardTitle>
-              <Activity className="h-4 w-4 text-blue-600" />
+              <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+              <div className="text-2xl font-bold">
                 {stats.totalLogs.toLocaleString()}
               </div>
-              <p className="text-xs text-blue-600 dark:text-blue-400">
+              <p className="text-xs text-muted-foreground">
                 {stats.last24Hours} in last 24h
               </p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100/50 dark:from-purple-950/20 dark:to-purple-900/10 border-purple-200 dark:border-purple-800">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-purple-700 dark:text-purple-300">
+              <CardTitle className="text-sm font-medium">
                 Proofs Stored
               </CardTitle>
-              <FileText className="h-4 w-4 text-purple-600" />
+              <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">
+              <div className="text-2xl font-bold">
                 {stats.totalProofs.toLocaleString()}
               </div>
-              <p className="text-xs text-purple-600 dark:text-purple-400">
+              <p className="text-xs text-muted-foreground">
                 For audit trail
               </p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-green-50 to-green-100/50 dark:from-green-950/20 dark:to-green-900/10 border-green-200 dark:border-green-800">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-green-700 dark:text-green-300">
+              <CardTitle className="text-sm font-medium">
                 Success Rate
               </CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-600" />
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-900 dark:text-green-100">
+              <div className="text-2xl font-bold">
                 {stats.successRate}%
               </div>
-              <p className="text-xs text-green-600 dark:text-green-400">
+              <p className="text-xs text-muted-foreground">
                 {stats.successfulOps} successful
               </p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-red-50 to-red-100/50 dark:from-red-950/20 dark:to-red-900/10 border-red-200 dark:border-red-800">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-red-700 dark:text-red-300">
+              <CardTitle className="text-sm font-medium">
                 Failed Ops
               </CardTitle>
-              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-900 dark:text-red-100">
+              <div className="text-2xl font-bold">
                 {stats.failedOps}
               </div>
-              <p className="text-xs text-red-600 dark:text-red-400">
+              <p className="text-xs text-muted-foreground">
                 Needs attention
               </p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-950/20 dark:to-amber-900/10 border-amber-200 dark:border-amber-800">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-amber-700 dark:text-amber-300">
+              <CardTitle className="text-sm font-medium">
                 Last 7 Days
               </CardTitle>
-              <Zap className="h-4 w-4 text-amber-600" />
+              <Zap className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-amber-900 dark:text-amber-100">
+              <div className="text-2xl font-bold">
                 {stats.last7Days}
               </div>
-              <p className="text-xs text-amber-600 dark:text-amber-400">
+              <p className="text-xs text-muted-foreground">
                 Operations
               </p>
             </CardContent>
@@ -476,7 +472,7 @@ export default function ZkFetchLogsPage() {
                               {truncateHash(proof.proofHash as string, 12)}
                             </code>
                             {proof.verifiedAt != null && (
-                              <Badge className="bg-green-100 text-green-800">
+                              <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300">
                                 <CheckCircle className="h-3 w-3 mr-1" />
                                 Verified
                               </Badge>
@@ -561,13 +557,13 @@ export default function ZkFetchLogsPage() {
 
       {/* Recent Errors Alert */}
       {stats?.recentErrors && stats.recentErrors.length > 0 && (
-        <Card className="border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-red-700 dark:text-red-300 flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5" />
               Recent Errors
             </CardTitle>
-            <CardDescription className="text-red-600 dark:text-red-400">
+            <CardDescription>
               Last {stats.recentErrors.length} failed operations
             </CardDescription>
           </CardHeader>
@@ -576,7 +572,7 @@ export default function ZkFetchLogsPage() {
               {stats.recentErrors.slice(0, 5).map((error: Record<string, unknown>) => (
                 <div
                   key={error.id as string}
-                  className="flex items-start justify-between p-3 rounded-lg bg-white dark:bg-gray-900 border border-red-200 dark:border-red-800"
+                  className="flex items-start justify-between p-3 rounded-lg bg-muted/50 border"
                 >
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -587,7 +583,7 @@ export default function ZkFetchLogsPage() {
                         {formatTime(error.createdAt as string)}
                       </span>
                     </div>
-                    <p className="text-sm text-red-700 dark:text-red-300">
+                    <p className="text-sm">
                       <span className="font-mono">{String(error.errorCode ?? '')}</span>:{' '}
                       {String(error.errorMessage ?? '')}
                     </p>

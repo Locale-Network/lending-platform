@@ -57,9 +57,16 @@ const publicClient = createPublicClient({
 
 /**
  * Check if testing mode is enabled (bypasses all SBT checks)
+ * SECURITY: Testing mode is blocked in production to prevent accidental deployment
  */
 export function isTestingMode(): boolean {
-  return process.env.DISABLE_SBT_CHECKS === 'true';
+  if (process.env.DISABLE_SBT_CHECKS === 'true' && process.env.NODE_ENV === 'production') {
+    console.warn(
+      '[SECURITY] DISABLE_SBT_CHECKS=true is ignored in production. Remove this env var.'
+    );
+    return false;
+  }
+  return process.env.DISABLE_SBT_CHECKS === 'true' && process.env.NODE_ENV !== 'production';
 }
 
 /**

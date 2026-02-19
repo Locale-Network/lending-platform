@@ -10,6 +10,7 @@ import {
   getLoanAmount,
   getLoanInterestRate,
   getLoanRepaymentAmount,
+  getLoanInterestAmount,
 } from '@/services/contracts/creditTreasuryPool';
 import { getTokenDecimals, getTokenSymbol } from '@/services/contracts/token';
 import { Card, CardContent } from '@/components/ui/card';
@@ -51,6 +52,7 @@ export default async function AdminLoanDetailPage(props: { params: Promise<{ id:
               id: true,
               name: true,
               slug: true,
+              contractPoolId: true,
             },
           },
         },
@@ -87,15 +89,24 @@ export default async function AdminLoanDetailPage(props: { params: Promise<{ id:
     console.error('[Admin Loan Page] Error fetching token info:', error);
   }
 
+  let loanInterestAmount = BigInt(0);
+
   try {
     loanActive = await getLoanActive(id);
     loanAmount = await getLoanAmount(id);
     loanInterestRate = await getLoanInterestRate(id);
     loanRepaymentAmount = await getLoanRepaymentAmount(id);
+    loanInterestAmount = await getLoanInterestAmount(id);
   } catch (error) {
     console.error('[Admin Loan Page] Error fetching on-chain loan data:', error);
     // Loan may not exist on-chain yet (not disbursed)
   }
+
+  // Check if yield was already distributed for this loan
+  const yieldDistributed = await prisma.yieldDistribution.findFirst({
+    where: { loanApplicationId: id },
+    select: { id: true, distributionTxHash: true },
+  });
 
   return (
     <div className="space-y-6 p-8 pb-24">
@@ -148,9 +159,16 @@ export default async function AdminLoanDetailPage(props: { params: Promise<{ id:
             tokenSymbol={tokenSymbol}
             loanAmount={Number(loanAmount) / 10 ** tokenDecimals}
             loanInterestRate={Number(loanInterestRate)}
-            loanRepaymentAmount={Number(loanRepaymentAmount) / 10 ** tokenDecimals}
+            loanRepaymentAmount={
+              // If loan is inactive but has an on-chain amount, it was fully repaid
+              !loanActive && Number(loanAmount) > 0
+                ? Number(loanAmount) / 10 ** tokenDecimals
+                : Number(loanRepaymentAmount) / 10 ** tokenDecimals
+            }
             loanActive={loanActive}
             adminAddress={session.address}
+            interestAmount={Number(loanInterestAmount) / 10 ** tokenDecimals}
+            yieldDistributed={!!yieldDistributed}
           />
         </div>
         {/* Right Column - Data Verification */}

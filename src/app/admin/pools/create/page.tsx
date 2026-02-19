@@ -13,12 +13,26 @@ import { ArrowLeft, ArrowRight, Check, Loader2, AlertCircle, ExternalLink, Rocke
 import Link from 'next/link';
 import RichTextEditor from '@/components/ui/rich-text-editor';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getExplorerUrl } from '@/lib/explorer';
 
 const POOL_TYPES = [
   { value: 'SMALL_BUSINESS', label: 'Small Business' },
   { value: 'REAL_ESTATE', label: 'Real Estate' },
   { value: 'CONSUMER', label: 'Consumer Loans' },
   { value: 'MIXED', label: 'Mixed Portfolio' },
+];
+
+const BORROWER_TYPES = [
+  {
+    value: 'MULTI_BORROWER',
+    label: 'Multi-Borrower Pool',
+    description: 'Multiple borrowers share pool funds. Composite risk scoring enabled.',
+  },
+  {
+    value: 'SINGLE_BORROWER',
+    label: 'Single-Borrower Pool',
+    description: 'One entity receives all pool funds. Individual metrics only.',
+  },
 ];
 
 const STEPS = [
@@ -49,6 +63,7 @@ export default function CreatePoolPage() {
     slug: '',
     description: '',
     type: 'SMALL_BUSINESS',
+    borrowerType: 'MULTI_BORROWER',
     imageUrl: '',
     featured: false,
 
@@ -116,6 +131,7 @@ export default function CreatePoolPage() {
         name: formData.name,
         description: formData.description,
         poolType: formData.type,
+        borrowerType: formData.borrowerType,
         poolSize: parseFloat(formData.targetSize || '0'),
         minimumStake: parseFloat(formData.minimumStake || '0'),
         managementFeeRate: parseFloat(formData.managementFee || '0'),
@@ -315,6 +331,25 @@ export default function CreatePoolPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="borrowerType">Pool Structure *</Label>
+                  <Select value={formData.borrowerType} onValueChange={value => handleInputChange('borrowerType', value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BORROWER_TYPES.map(bt => (
+                        <SelectItem key={bt.value} value={bt.value}>
+                          {bt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {BORROWER_TYPES.find(bt => bt.value === formData.borrowerType)?.description}
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -528,16 +563,6 @@ export default function CreatePoolPage() {
                   </div>
                 </div>
 
-                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-sm font-medium text-blue-900">Expected APY Range</p>
-                  <p className="text-2xl font-bold text-blue-600 mt-2">
-                    {(parseFloat(formData.baseInterestRate) + parseFloat(formData.riskPremiumMin)).toFixed(1)}% -{' '}
-                    {(parseFloat(formData.baseInterestRate) + parseFloat(formData.riskPremiumMax)).toFixed(1)}%
-                  </p>
-                  <p className="text-xs text-blue-700 mt-1">
-                    Investors will see this range on the pool details page
-                  </p>
-                </div>
               </div>
             )}
 
@@ -607,7 +632,7 @@ export default function CreatePoolPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-green-700">Transaction:</span>
                         <a
-                          href={`https://sepolia.arbiscan.io/tx/${deploymentResult.txHash}`}
+                          href={getExplorerUrl('tx', deploymentResult.txHash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-1 text-green-600 hover:underline"
@@ -715,6 +740,12 @@ export default function CreatePoolPage() {
                       </p>
                     </div>
                     <div className="space-y-2">
+                      <p className="text-muted-foreground">Pool Structure</p>
+                      <p className="font-medium">
+                        {BORROWER_TYPES.find(bt => bt.value === formData.borrowerType)?.label || 'Not set'}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
                       <p className="text-muted-foreground">Target Size</p>
                       <p className="font-medium">
                         {formData.targetSize ? parseInt(formData.targetSize).toLocaleString() : 'Not set'} USDC
@@ -755,7 +786,7 @@ export default function CreatePoolPage() {
                         <Check className="h-4 w-4 text-green-600" />
                         <span className="font-medium text-green-700">Deployed to Arbitrum Sepolia</span>
                         <a
-                          href={`https://sepolia.arbiscan.io/tx/${deploymentResult.txHash}`}
+                          href={getExplorerUrl('tx', deploymentResult.txHash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-blue-600 hover:underline flex items-center gap-1"

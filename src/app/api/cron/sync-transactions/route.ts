@@ -26,11 +26,15 @@ const log = cronLogger.child({ job: 'sync-transactions' });
  */
 
 // Configuration from environment variables
-const getSyncConfig = () => ({
-  enabled: process.env.DAILY_SYNC_ENABLED !== 'false',
-  syncAllActiveLoans: process.env.SYNC_ALL_ACTIVE_LOANS !== 'false',
-  recentActivityDays: parseInt(process.env.SYNC_RECENT_ACTIVITY_DAYS || '30', 10),
-});
+const getSyncConfig = () => {
+  const recentActivityDays = parseInt(process.env.SYNC_RECENT_ACTIVITY_DAYS || '30', 10);
+  return {
+    enabled: process.env.DAILY_SYNC_ENABLED !== 'false',
+    syncAllActiveLoans: process.env.SYNC_ALL_ACTIVE_LOANS !== 'false',
+    // SECURITY: Guard against NaN from malformed env var
+    recentActivityDays: isNaN(recentActivityDays) ? 30 : Math.max(1, recentActivityDays),
+  };
+};
 
 export async function GET(req: NextRequest) {
   // Verify cron secret for security

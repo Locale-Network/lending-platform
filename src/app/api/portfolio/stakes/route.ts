@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Contract, JsonRpcProvider, EventLog } from 'ethers';
+import prisma from '@prisma/index';
+import { stakingPoolAbi } from '@/lib/contracts/stakingPool';
 import { isValidEthereumAddress } from '@/lib/validation';
+import { USDC_DECIMALS, DEFAULT_BLOCK_LOOKBACK } from '@/lib/constants/business';
+
+const TOKEN_DECIMALS = USDC_DECIMALS;
 
 /**
- * Get user's staking portfolio from the blockchain via Alchemy
+ * Get user's staking portfolio from blockchain events
  * @route GET /api/portfolio/stakes?address=0x...
  *
- * This pulls data directly from on-chain - no local database needed.
- * The blockchain is the source of truth for all staking positions.
+ * Queries Staked/Unstaked events filtered by user address, groups by poolId,
+ * then resolves pool data from the database. Only shows pools that exist in the DB.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -20,7 +26,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Validate Ethereum address format
     if (!isValidEthereumAddress(userAddress)) {
       return NextResponse.json(
         { error: 'Invalid Ethereum address format' },
@@ -29,9 +34,9 @@ export async function GET(request: NextRequest) {
     }
 
     const stakingPoolAddress = process.env.NEXT_PUBLIC_STAKING_POOL_ADDRESS;
-    const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
+    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
 
-    if (!stakingPoolAddress || !apiKey) {
+    if (!stakingPoolAddress || !rpcUrl) {
       return NextResponse.json({
         stakes: [],
         summary: {
@@ -45,120 +50,139 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Fetch transfers FROM user TO staking pool (stakes)
-    const stakesResponse = await fetch(`https://arb-sepolia.g.alchemy.com/v2/${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'alchemy_getAssetTransfers',
-        params: [{
-          fromBlock: '0x0',
-          toBlock: 'latest',
-          fromAddress: userAddress,
-          toAddress: stakingPoolAddress,
-          category: ['erc20'],
-          withMetadata: true,
-          excludeZeroValue: true,
-          maxCount: '0x64', // 100 results
-        }]
-      })
-    });
+    const provider = new JsonRpcProvider(rpcUrl);
+    const contract = new Contract(stakingPoolAddress, stakingPoolAbi, provider);
 
-    // Fetch transfers FROM staking pool TO user (unstakes/withdrawals)
-    const unstakesResponse = await fetch(`https://arb-sepolia.g.alchemy.com/v2/${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'alchemy_getAssetTransfers',
-        params: [{
-          fromBlock: '0x0',
-          toBlock: 'latest',
-          fromAddress: stakingPoolAddress,
-          toAddress: userAddress,
-          category: ['erc20'],
-          withMetadata: true,
-          excludeZeroValue: true,
-          maxCount: '0x64',
-        }]
-      })
-    });
+    // Query last ~5M blocks for this user's events
+    // Arbitrum produces blocks every ~0.25s, so 5M blocks ≈ ~14 days of history
+    const currentBlock = await provider.getBlockNumber();
+    const fromBlock = Math.max(0, currentBlock - DEFAULT_BLOCK_LOOKBACK);
 
-    const [stakesData, unstakesData] = await Promise.all([
-      stakesResponse.json(),
-      unstakesResponse.json()
+    // Filter by user address (second indexed topic)
+    const [stakedEvents, unstakedEvents] = await Promise.all([
+      contract.queryFilter(contract.filters.Staked(null, userAddress), fromBlock, currentBlock),
+      contract.queryFilter(contract.filters.Unstaked(null, userAddress), fromBlock, currentBlock),
     ]);
 
-    // Parse amount from transfer
-    const parseAmount = (tx: any): number => {
-      let amount = tx.value || 0;
-      if (amount === 0 && tx.rawContract?.value) {
-        const rawValue = parseInt(tx.rawContract.value, 16);
-        const decimals = parseInt(tx.rawContract.decimal, 16) || 6;
-        amount = rawValue / Math.pow(10, decimals);
-      }
-      return amount;
-    };
+    const formatAmount = (raw: bigint): number =>
+      Number(raw) / Math.pow(10, TOKEN_DECIMALS);
 
-    // Calculate totals
-    const totalStaked = (stakesData.result?.transfers || []).reduce(
-      (sum: number, tx: any) => sum + parseAmount(tx),
-      0
+    // Group net amounts by poolId
+    const poolBalances = new Map<string, { staked: number; unstaked: number; firstStakeTime: string }>();
+
+    // Get block timestamps for first-stake tracking
+    const blockNumbers = new Set<number>();
+    for (const e of [...stakedEvents, ...unstakedEvents]) {
+      blockNumbers.add(e.blockNumber);
+    }
+    const blockTimestamps = new Map<number, string>();
+    await Promise.all(
+      Array.from(blockNumbers).map(async (bn) => {
+        const block = await provider.getBlock(bn);
+        if (block) {
+          blockTimestamps.set(bn, new Date(block.timestamp * 1000).toISOString());
+        }
+      })
     );
 
-    const totalUnstaked = (unstakesData.result?.transfers || []).reduce(
-      (sum: number, tx: any) => sum + parseAmount(tx),
-      0
-    );
+    for (const e of stakedEvents) {
+      if (!('args' in e)) continue;
+      const ev = e as EventLog;
+      const poolId = ev.args[0] as string;
+      const amount = formatAmount(ev.args[2]);
+      const timestamp = blockTimestamps.get(ev.blockNumber) || new Date().toISOString();
+      const existing = poolBalances.get(poolId) || { staked: 0, unstaked: 0, firstStakeTime: timestamp };
+      existing.staked += amount;
+      if (timestamp < existing.firstStakeTime) existing.firstStakeTime = timestamp;
+      poolBalances.set(poolId, existing);
+    }
 
-    const netStaked = totalStaked - totalUnstaked;
+    for (const e of unstakedEvents) {
+      if (!('args' in e)) continue;
+      const ev = e as EventLog;
+      const poolId = ev.args[0] as string;
+      const amount = formatAmount(ev.args[2]);
+      const existing = poolBalances.get(poolId) || { staked: 0, unstaked: 0, firstStakeTime: new Date().toISOString() };
+      existing.unstaked += amount;
+      poolBalances.set(poolId, existing);
+    }
 
-    // Transform stakes for display
-    const stakes = (stakesData.result?.transfers || []).map((tx: any, index: number) => {
-      const amount = parseAmount(tx);
-      const timestamp = tx.metadata?.blockTimestamp || new Date().toISOString();
+    // Resolve pool data from DB (only include known pools)
+    const poolIds = Array.from(poolBalances.keys());
+    const dbPools = poolIds.length > 0
+      ? await prisma.loanPool.findMany({
+          where: { contractPoolId: { in: poolIds } },
+          select: {
+            contractPoolId: true,
+            id: true,
+            name: true,
+            slug: true,
+            annualizedReturn: true,
+            poolType: true,
+            status: true,
+          },
+        })
+      : [];
+
+    const poolDataMap = new Map<string, typeof dbPools[0]>();
+    for (const p of dbPools) {
+      if (p.contractPoolId) poolDataMap.set(p.contractPoolId, p);
+    }
+
+    // Build stakes array (one per pool, only for DB-known pools)
+    const stakes = [];
+    for (const [poolId, balance] of poolBalances) {
+      const poolData = poolDataMap.get(poolId);
+      if (!poolData) continue; // Skip pools not in DB (old test pools)
+
+      const netStaked = balance.staked - balance.unstaked;
+      if (netStaked <= 0) continue; // Skip fully unstaked pools
+
+      const poolApy = poolData.annualizedReturn ?? 0;
       const daysSinceStake = Math.floor(
-        (new Date().getTime() - new Date(timestamp).getTime()) / (1000 * 60 * 60 * 24)
+        (new Date().getTime() - new Date(balance.firstStakeTime).getTime()) / (1000 * 60 * 60 * 24)
       );
 
-      // Estimate rewards at 12% APY (this is approximate - real rewards come from contract)
-      const apy = 12;
-      const dailyRate = apy / 365 / 100;
-      const rewards = amount * dailyRate * daysSinceStake;
+      let rewards = 0;
+      if (poolApy > 0) {
+        const dailyRate = poolApy / 365 / 100;
+        rewards = netStaked * dailyRate * daysSinceStake;
+      }
 
-      return {
-        id: `${tx.hash}-${index}`,
-        amount,
-        shares: amount, // Simplified - actual shares come from contract
+      stakes.push({
+        id: `${poolId}-stake`,
+        amount: Math.round(netStaked * 100) / 100,
+        shares: Math.round(netStaked * 100) / 100,
+        pendingRewards: Math.round(rewards * 100) / 100,
         rewards: Math.round(rewards * 100) / 100,
-        currentValue: amount + rewards,
-        transaction_hash: tx.hash,
-        createdAt: timestamp,
+        currentValue: Math.round((netStaked + rewards) * 100) / 100,
+        createdAt: balance.firstStakeTime,
         pool: {
-          id: 'staking-pool',
-          name: 'Real Estate Bridge Lending',
-          slug: 'real-estate-bridge',
-          annualizedReturn: apy,
-          poolType: 'BRIDGE',
-          status: 'ACTIVE',
-        }
-      };
-    });
+          id: poolData.id,
+          name: poolData.name,
+          slug: poolData.slug,
+          annualizedReturn: poolData.annualizedReturn,
+          poolType: poolData.poolType,
+          status: poolData.status,
+        },
+      });
+    }
 
     // Calculate summary
-    const totalRewards = stakes.reduce((sum: number, s: any) => sum + s.rewards, 0);
+    const totalInvested = stakes.reduce((sum, s) => sum + s.amount, 0);
+    const totalRewards = stakes.reduce((sum, s) => sum + s.rewards, 0);
+    const avgReturn = stakes.length > 0
+      ? stakes.reduce((sum, s) => sum + (s.pool.annualizedReturn ?? 0), 0) / stakes.length
+      : null;
 
     return NextResponse.json({
       stakes,
       summary: {
-        totalInvested: Math.round(netStaked * 100) / 100,
+        totalInvested: Math.round(totalInvested * 100) / 100,
         totalRewards: Math.round(totalRewards * 100) / 100,
-        totalValue: Math.round((netStaked + totalRewards) * 100) / 100,
+        totalValue: Math.round((totalInvested + totalRewards) * 100) / 100,
         activeInvestments: stakes.length,
-        avgReturn: 12, // Pool APY
+        avgReturn,
       },
       source: 'blockchain',
     });

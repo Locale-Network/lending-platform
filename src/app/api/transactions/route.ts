@@ -2,6 +2,11 @@ import client from '@/utils/plaid';
 import prisma from '@prisma/index';
 import { NextRequest, NextResponse } from 'next/server';
 import { RemovedTransaction, Transaction, TransactionsSyncRequest } from 'plaid';
+import { getSession } from '@/lib/auth/authorization';
+import { checkRateLimit, getClientIp, rateLimitHeaders } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
+
+const log = logger.child({ module: 'transactions-api' });
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -9,6 +14,26 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
+    // SECURITY: Require authentication - access tokens are sensitive
+    const session = await getSession();
+    if (!session?.address) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // SECURITY: Rate limiting
+    const clientIp = await getClientIp();
+    const rateLimitResult = await checkRateLimit(
+      `transactions-sync:${session.address}`,
+      { limit: 10, windowSeconds: 60 } // 10 syncs per minute
+    );
+
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait before syncing again.' },
+        { status: 429, headers: rateLimitHeaders(rateLimitResult) }
+      );
+    }
+
     let cursor = '';
     let added: Transaction[] = [];
     let modified: Transaction[] = [];
@@ -20,6 +45,32 @@ export async function GET(req: NextRequest) {
 
     if (!access_token) {
       return NextResponse.json({ error: 'Access token is required' }, { status: 400 });
+    }
+
+    // SECURITY: Verify user owns this access token by checking database
+    // This prevents users from querying others' bank data
+    const plaidItem = await prisma.plaidItemAccessToken.findFirst({
+      where: {
+        accessToken: access_token,
+      },
+      select: {
+        id: true,
+        accountAddress: true,
+      },
+    });
+
+    if (!plaidItem) {
+      log.warn({ address: session.address }, 'Access token not found');
+      return NextResponse.json({ error: 'Invalid access token' }, { status: 400 });
+    }
+
+    // Verify ownership - user must own this Plaid item
+    if (plaidItem.accountAddress.toLowerCase() !== session.address.toLowerCase()) {
+      log.warn(
+        { address: session.address, itemId: plaidItem.id },
+        'User attempted to access another user\'s transactions'
+      );
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     while (hasMore) {
@@ -43,19 +94,28 @@ export async function GET(req: NextRequest) {
       hasMore = data.has_more;
     }
 
-    (async () => {
-      try {
-        await insertTransactions(added);
-        await updateTransactions(modified);
-        await markTransactionsAsDeleted(removed);
-      } catch (error) {
-        console.error(error);
-      }
-    })();
+    // SECURITY FIX: Properly await database operations instead of fire-and-forget
+    // Fire-and-forget can lead to:
+    // 1. Silent failures that go unnoticed
+    // 2. Response sent before data is persisted
+    // 3. Race conditions if user makes another request
+    try {
+      await insertTransactions(added);
+      await updateTransactions(modified);
+      await markTransactionsAsDeleted(removed);
+      log.info(
+        { added: added.length, modified: modified.length, removed: removed.length },
+        'Transactions synced successfully'
+      );
+    } catch (dbError) {
+      log.error({ err: dbError }, 'Failed to persist transactions');
+      // Still return success for the sync, but log the error
+      // The transactions can be re-synced on the next request
+    }
 
     return NextResponse.json({ latest_transactions: added }, { status: 200 });
   } catch (error) {
-    console.error(error);
+    log.error({ err: error }, 'Transaction sync failed');
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
