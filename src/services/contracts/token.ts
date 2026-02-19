@@ -108,9 +108,9 @@ export const getStakingTokenBalance = async (address: string): Promise<number> =
   const stakingToken = new Contract(stakingTokenAddress, erc20Abi, getProvider());
 
   const balance: bigint = await stakingToken.balanceOf(address);
-  const decimals: number = await stakingToken.decimals();
+  const decimals = await stakingToken.decimals();
 
-  return Number(balance) / 10 ** decimals;
+  return Number(balance) / 10 ** Number(decimals);
 };
 
 /**

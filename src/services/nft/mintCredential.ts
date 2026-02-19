@@ -3,6 +3,7 @@ import 'server-only';
 import { Contract, JsonRpcProvider, Wallet, Log, EventLog } from 'ethers';
 import borrowerCredentialAbi from '../contracts/BorrowerCredential.abi.json';
 import investorCredentialAbi from '../contracts/InvestorCredential.abi.json';
+import { getEthersGasOverrides } from '@/lib/contracts/gas-safety';
 
 // Lazy initialization to avoid errors during build time when env vars may not be set
 let provider: JsonRpcProvider | null = null;
@@ -126,11 +127,13 @@ export async function mintBorrowerCredential({
     }
 
     // Issue the credential
+    const gasOverrides = await getEthersGasOverrides(getProvider());
     const tx = await contract.issueCredential(
       to,
       kycLevel,
       validityPeriod,
-      plaidVerificationId
+      plaidVerificationId,
+      gasOverrides
     );
 
     console.log(`[mintBorrowerCredential] Transaction submitted: ${tx.hash}`);
@@ -314,12 +317,14 @@ export async function mintInvestorCredential({
 
     // Issue the credential
     // Function signature: issueCredential(address to, uint256 accreditationLevel, uint256 validityPeriod, uint256 investmentLimit, string plaidVerificationId)
+    const gasOverrides = await getEthersGasOverrides(getProvider());
     const tx = await contract.issueCredential(
       to,
       accreditationLevel,
       validityPeriod,
       investmentLimit,
-      plaidVerificationId
+      plaidVerificationId,
+      gasOverrides
     );
 
     console.log(`[mintInvestorCredential] Transaction submitted: ${tx.hash}`);

@@ -2,6 +2,7 @@ import 'server-only';
 
 import prisma from '@prisma/index';
 import { EmailNotificationType, EmailStatus } from '@prisma/client';
+import { getExplorerUrl } from '@/lib/explorer';
 
 /**
  * Email Notification Service
@@ -81,7 +82,7 @@ const templates: Record<EmailNotificationType, (data: any) => { subject: string;
       <p>Your loan funds have been sent to your wallet.</p>
       <ul>
         <li><strong>Amount:</strong> $${data.loanAmount.toLocaleString()}</li>
-        <li><strong>Transaction:</strong> <a href="https://sepolia.arbiscan.io/tx/${data.txHash}">${data.txHash.slice(0, 10)}...</a></li>
+        <li><strong>Transaction:</strong> <a href="${getExplorerUrl('tx', data.txHash)}">${data.txHash.slice(0, 10)}...</a></li>
       </ul>
       <p>You can view your loan details and repayment schedule in your dashboard.</p>
     `,
@@ -130,7 +131,7 @@ const templates: Record<EmailNotificationType, (data: any) => { subject: string;
       <ul>
         <li><strong>Amount:</strong> $${data.amount.toLocaleString()} USDC</li>
         <li><strong>Pool:</strong> ${data.poolName}</li>
-        <li><strong>Transaction:</strong> <a href="https://sepolia.arbiscan.io/tx/${data.txHash}">${data.txHash.slice(0, 10)}...</a></li>
+        <li><strong>Transaction:</strong> <a href="${getExplorerUrl('tx', data.txHash)}">${data.txHash.slice(0, 10)}...</a></li>
       </ul>
       <p>Your funds are now earning returns. View your portfolio for details.</p>
     `,

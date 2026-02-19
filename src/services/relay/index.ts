@@ -2,6 +2,9 @@ import 'server-only';
 import { createPublicClient, createWalletClient, http, encodeAbiParameters, parseAbi, getAddress, type Chain } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { arbitrum, arbitrumSepolia } from 'viem/chains';
+import { calculateInterestRateFromDSCR } from '@/lib/interest-rate';
+import { triggerPoolRiskRecalculation } from '@/services/risk';
+import { assertGasPriceSafe } from '@/lib/contracts/gas-safety';
 
 // Define local Anvil chain for local development
 const anvil: Chain = {
@@ -78,24 +81,64 @@ const SIMPLE_LOAN_POOL_ABI = parseAbi([
 const CARTESI_GRAPHQL_URL = process.env.CARTESI_GRAPHQL_URL || 'http://localhost:8080/graphql';
 const SIMPLE_LOAN_POOL_ADDRESS = (process.env.SIMPLE_LOAN_POOL_ADDRESS || process.env.NEXT_PUBLIC_LOAN_POOL_ADDRESS) as `0x${string}`;
 const RELAY_PRIVATE_KEY = process.env.RELAY_PRIVATE_KEY as `0x${string}`;
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://arb1.arbitrum.io/rpc';
-const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '421614', 10);
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
+const CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID ? parseInt(process.env.NEXT_PUBLIC_CHAIN_ID, 10) : undefined;
 
-// Track processed notices to avoid duplicates
-const processedNotices = new Set<string>();
+// Track processed notices to avoid duplicates across serverless invocations.
+// Uses Redis when available (shared across instances), falls back to in-memory Set for dev.
+const localProcessedNotices = new Set<string>();
+
+const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const NOTICE_TTL_SECONDS = 7 * 24 * 60 * 60; // Keep notice IDs for 7 days
+
+async function isNoticeProcessed(noticeId: string): Promise<boolean> {
+  if (localProcessedNotices.has(noticeId)) return true;
+
+  if (REDIS_URL && REDIS_TOKEN) {
+    try {
+      const res = await fetch(`${REDIS_URL}/get/relay:notice:${noticeId}`, {
+        headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
+      });
+      const data = await res.json();
+      return data.result !== null;
+    } catch {
+      // Redis unavailable — fall through to local check
+    }
+  }
+  return false;
+}
+
+async function markNoticeProcessed(noticeId: string): Promise<void> {
+  localProcessedNotices.add(noticeId);
+
+  if (REDIS_URL && REDIS_TOKEN) {
+    try {
+      await fetch(`${REDIS_URL}/set/relay:notice:${noticeId}/1/EX/${NOTICE_TTL_SECONDS}`, {
+        headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
+      });
+    } catch {
+      // Redis unavailable — local-only tracking
+    }
+  }
+}
 
 /**
  * Get the appropriate chain configuration based on chain ID
  */
 function getChain(): Chain {
+  if (!CHAIN_ID) {
+    throw new Error('NEXT_PUBLIC_CHAIN_ID not configured');
+  }
   switch (CHAIN_ID) {
     case 31337:
       return anvil;
     case 421614:
       return arbitrumSepolia;
     case 42161:
-    default:
       return arbitrum;
+    default:
+      throw new Error(`Unsupported NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}`);
   }
 }
 
@@ -109,6 +152,10 @@ function createClients() {
 
   if (!SIMPLE_LOAN_POOL_ADDRESS) {
     throw new Error('SIMPLE_LOAN_POOL_ADDRESS not configured');
+  }
+
+  if (!RPC_URL) {
+    throw new Error('NEXT_PUBLIC_RPC_URL not configured');
   }
 
   const account = privateKeyToAccount(RELAY_PRIVATE_KEY);
@@ -253,15 +300,11 @@ function dscrToUint256(dscrValue: string): bigint {
  * Calculate interest rate from DSCR (basis points)
  * Higher DSCR = lower risk = lower rate
  * Rates aligned with SBA loan standards (9-15% range)
+ * Uses shared utility for consistent rate calculation across the platform.
  */
 function calculateInterestRate(dscrValue: string): bigint {
   const dscr = parseFloat(dscrValue);
-  // Rate tiers based on DSCR (in basis points) - SBA-aligned 9-15% range
-  if (dscr >= 2.0) return BigInt(900);    // 9% - excellent creditworthiness
-  if (dscr >= 1.5) return BigInt(1050);   // 10.5% - strong creditworthiness
-  if (dscr >= 1.25) return BigInt(1200);  // 12% - good creditworthiness
-  if (dscr >= 1.0) return BigInt(1350);   // 13.5% - acceptable creditworthiness
-  return BigInt(1500);                     // 15% - high risk
+  return BigInt(calculateInterestRateFromDSCR(dscr));
 }
 
 /**
@@ -294,8 +337,8 @@ const DSCR_VERIFIED_ZKFETCH_TYPE = 'dscr_verified_zkfetch';
 export async function relayNotice(notice: DscrVerifiedNotice): Promise<string | null> {
   const noticeId = `${notice.action}-${notice.borrower_address}-${notice.loan_id}-${notice.verification_id}`;
 
-  // Skip if already processed
-  if (processedNotices.has(noticeId)) {
+  // Skip if already processed (checks Redis then local Set)
+  if (await isNoticeProcessed(noticeId)) {
     console.log(`[Relay] Skipping already processed notice: ${noticeId}`);
     return null;
   }
@@ -318,6 +361,9 @@ export async function relayNotice(notice: DscrVerifiedNotice): Promise<string | 
       proofHash: notice.zkfetch_proof_hash,
       verificationId: notice.verification_id,
     });
+
+    // Check gas price before submitting
+    await assertGasPriceSafe(() => publicClient.getGasPrice());
 
     // Simulate the transaction first
     const { request } = await publicClient.simulateContract({
@@ -344,8 +390,14 @@ export async function relayNotice(notice: DscrVerifiedNotice): Promise<string | 
       }
     );
 
-    // Mark as processed
-    processedNotices.add(noticeId);
+    // Mark as processed (persists to Redis if available)
+    await markNoticeProcessed(noticeId);
+
+    // Trigger composite risk recalculation for any pools containing this loan
+    // This is non-blocking - we don't wait for recalculation to complete
+    triggerPoolRiskRecalculation(notice.loan_id).catch((error) => {
+      console.error(`[Relay] Failed to trigger pool risk recalculation for loan ${notice.loan_id}:`, error);
+    });
 
     return txHash;
   } catch (error) {
@@ -462,7 +514,7 @@ export async function fetchNoticeByLoanId(loanId: string): Promise<DscrVerifiedN
  */
 export function getRelayStatus() {
   return {
-    processedCount: processedNotices.size,
+    processedCount: localProcessedNotices.size,
     cartesiGraphqlUrl: CARTESI_GRAPHQL_URL,
     loanPoolAddress: SIMPLE_LOAN_POOL_ADDRESS,
     chainId: CHAIN_ID,

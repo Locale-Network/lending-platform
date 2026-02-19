@@ -45,14 +45,14 @@ export async function getNotificationPreferencesAction(): Promise<NotificationPr
 
     // Try to find existing preferences
     let preferences = await prisma.notificationPreferences.findUnique({
-      where: { accountAddress: session.address },
+      where: { accountAddress: session.address.toLowerCase() },
     });
 
     // If no preferences exist, create defaults
     if (!preferences) {
       // Check if account exists first
       const account = await prisma.account.findUnique({
-        where: { address: session.address },
+        where: { address: session.address.toLowerCase() },
       });
 
       if (!account) {
@@ -61,7 +61,7 @@ export async function getNotificationPreferencesAction(): Promise<NotificationPr
 
       preferences = await prisma.notificationPreferences.create({
         data: {
-          accountAddress: session.address,
+          accountAddress: session.address.toLowerCase(),
           emailNotifications: true,
           investmentUpdates: true,
           earningsAlerts: true,
@@ -109,9 +109,9 @@ export async function updateNotificationPreferencesAction(
 
     // Upsert preferences (create if not exists, update if exists)
     const preferences = await prisma.notificationPreferences.upsert({
-      where: { accountAddress: session.address },
+      where: { accountAddress: session.address.toLowerCase() },
       create: {
-        accountAddress: session.address,
+        accountAddress: session.address.toLowerCase(),
         ...validatedData,
         securityAlerts: true, // Always true
       },
@@ -140,22 +140,40 @@ export async function updateNotificationPreferencesAction(
 }
 
 /**
- * Get investor verification status
+ * Get investor verification status (includes jurisdiction gate data)
  */
 export async function getInvestorVerificationStatusAction(): Promise<{
   isVerified: boolean;
   tokenId: string | null;
   kycStatus: string | null;
+  jurisdictionType: string | null;
+  jurisdictionCountry: string | null;
+  jurisdictionState: string | null;
+  jurisdictionCertifiedAt: string | null;
+  accreditationMethod: string | null;
+  accreditationCertifiedAt: string | null;
+  regSCertifications: unknown;
 }> {
   try {
     const session = await getSession();
 
     if (!session || !session.address) {
-      return { isVerified: false, tokenId: null, kycStatus: null };
+      return {
+        isVerified: false,
+        tokenId: null,
+        kycStatus: null,
+        jurisdictionType: null,
+        jurisdictionCountry: null,
+        jurisdictionState: null,
+        jurisdictionCertifiedAt: null,
+        accreditationMethod: null,
+        accreditationCertifiedAt: null,
+        regSCertifications: null,
+      };
     }
 
     const account = await prisma.account.findUnique({
-      where: { address: session.address },
+      where: { address: session.address.toLowerCase() },
       select: {
         investorNFTTokenId: true,
         KYCVerification: {
@@ -163,6 +181,13 @@ export async function getInvestorVerificationStatusAction(): Promise<{
             status: true,
           },
         },
+        jurisdictionType: true,
+        jurisdictionCountry: true,
+        jurisdictionState: true,
+        jurisdictionCertifiedAt: true,
+        accreditationMethod: true,
+        accreditationCertifiedAt: true,
+        regSCertifications: true,
       },
     });
 
@@ -170,9 +195,27 @@ export async function getInvestorVerificationStatusAction(): Promise<{
       isVerified: !!account?.investorNFTTokenId,
       tokenId: account?.investorNFTTokenId || null,
       kycStatus: account?.KYCVerification?.status || null,
+      jurisdictionType: account?.jurisdictionType || null,
+      jurisdictionCountry: account?.jurisdictionCountry || null,
+      jurisdictionState: account?.jurisdictionState || null,
+      jurisdictionCertifiedAt: account?.jurisdictionCertifiedAt?.toISOString() || null,
+      accreditationMethod: account?.accreditationMethod || null,
+      accreditationCertifiedAt: account?.accreditationCertifiedAt?.toISOString() || null,
+      regSCertifications: account?.regSCertifications || null,
     };
   } catch (error) {
     console.error('Failed to get investor verification status:', error);
-    return { isVerified: false, tokenId: null, kycStatus: null };
+    return {
+      isVerified: false,
+      tokenId: null,
+      kycStatus: null,
+      jurisdictionType: null,
+      jurisdictionCountry: null,
+      jurisdictionState: null,
+      jurisdictionCertifiedAt: null,
+      accreditationMethod: null,
+      accreditationCertifiedAt: null,
+      regSCertifications: null,
+    };
   }
 }

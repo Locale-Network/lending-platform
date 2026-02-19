@@ -4,6 +4,7 @@ import creditTreasuryPoolAbi from '../contracts/CreditTreasuryPool.abi.json';
 
 import { Contract, JsonRpcProvider, keccak256, toUtf8Bytes, Wallet } from 'ethers';
 import { rawBalanceOf } from './token';
+import { getEthersGasOverrides } from '@/lib/contracts/gas-safety';
 
 // Lazy initialization to avoid errors during build time when env vars may not be set
 let provider: JsonRpcProvider | null = null;
@@ -57,6 +58,7 @@ export const createLoan = async (
 ): Promise<void> => {
   const hashedLoanId = keccak256(toUtf8Bytes(loanId));
   const contract = getCreditTreasuryPool();
+  const gasOverrides = await getEthersGasOverrides(getProvider());
 
   console.log('creating loan...');
 
@@ -65,7 +67,8 @@ export const createLoan = async (
     borrower,
     amount,
     interestRate,
-    remainingMonths
+    remainingMonths,
+    gasOverrides
   );
 
   console.log('loan creation submitted');
@@ -76,7 +79,8 @@ export const createLoan = async (
 export const activateLoan = async (loanId: string): Promise<void> => {
   const hashedLoanId = keccak256(toUtf8Bytes(loanId));
   const contract = getCreditTreasuryPool();
-  const tx = await contract.activateLoan(hashedLoanId);
+  const gasOverrides = await getEthersGasOverrides(getProvider());
+  const tx = await contract.activateLoan(hashedLoanId, gasOverrides);
 
   return tx.wait();
 };
@@ -102,7 +106,8 @@ export async function updateLoanInterestRate(
       throw new Error('updateLoanInterestRate function not found');
     }
 
-    const tx = await contract.updateLoanInterestRate(hashedLoanId, interestRate);
+    const gasOverrides = await getEthersGasOverrides(getProvider());
+    const tx = await contract.updateLoanInterestRate(hashedLoanId, interestRate, gasOverrides);
 
     const receipt = await tx.wait();
     // Check if the transaction was successful
@@ -154,6 +159,41 @@ export async function getLoanActive(loanId: string): Promise<boolean> {
   const contract = getCreditTreasuryPool();
   const loanActive = await contract.loanIdToActive(hashedLoanId);
   return loanActive;
+}
+
+export async function getLoanInterestAmount(loanId: string): Promise<bigint> {
+  try {
+    const hashedLoanId = keccak256(toUtf8Bytes(loanId));
+    const contract = getCreditTreasuryPool();
+    return await contract.loanIdToInterestAmount(hashedLoanId);
+  } catch (error) {
+    console.error('Error getting loan interest amount', error);
+    return BigInt(0);
+  }
+}
+
+export async function transferFundsFromPool(
+  to: string,
+  amount: bigint
+): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  try {
+    const contract = getCreditTreasuryPool();
+    const gasOverrides = await getEthersGasOverrides(getProvider());
+    const tx = await contract.transferFunds(to, amount, gasOverrides);
+    const receipt = await tx.wait();
+
+    if (receipt.status === 0) {
+      throw new Error('Transaction failed on-chain');
+    }
+
+    return { success: true, txHash: receipt.hash };
+  } catch (error) {
+    console.error('transferFundsFromPool failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 }
 
 export async function getLoanRemainingMonths(loanId: string): Promise<bigint> {

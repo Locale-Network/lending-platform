@@ -22,6 +22,7 @@ export interface LendScoreResult {
   score?: number; // 1-99
   reasonCodes?: string[];
   error?: string;
+  isMockData?: boolean; // Indicates if this is mock/placeholder data
 }
 
 export interface StoredLendScore {
@@ -33,66 +34,48 @@ export interface StoredLendScore {
 /**
  * Retrieve LendScore for a connected bank account
  *
- * Note: LendScore requires the bank to be connected with the 'credit' product.
- * If not available, this will return an error and the caller should fall back
- * to DSCR-only assessment.
+ * NOTE: LendScore is currently unavailable. The Plaid Credit API integration
+ * is pending. For production, we rely on DSCR-only assessment.
  *
  * @param accessToken - Plaid access token for the user's bank connection
- * @returns LendScore result with score and reason codes
+ * @returns LendScore result indicating unavailability
  */
 export async function getLendScore(accessToken: string): Promise<LendScoreResult> {
-  // NOTE: The Plaid LendScore API (creditLendscoreGet) is not available in the
-  // current plaid-node SDK. This feature requires Plaid's Credit product which
-  // uses a different API pattern. For now, we return mock data for development.
-  //
-  // TODO: Implement proper LendScore integration when the API becomes available
-  // or use an alternative credit assessment method.
-  //
-  // See: https://plaid.com/docs/api/products/credit/
-
   // Suppress unused variable warning
   void accessToken;
 
-  // Return mock data for development/testing
-  console.log('[LendScore] Using mock data - LendScore API not yet implemented');
+  // LendScore is not available - Plaid Credit API integration pending
+  // Production uses DSCR-only assessment for creditworthiness
   return {
-    success: true,
-    score: 75, // Mock score for testing
-    reasonCodes: ['MOCK_DATA', 'CONSISTENT_INCOME', 'LOW_OVERDRAFT_FREQUENCY'],
+    success: false,
+    error: 'LendScore not available - Plaid Credit API integration pending',
   };
 }
 
 /**
  * Retrieve and store LendScore for a loan application
  *
+ * NOTE: LendScore is currently unavailable. This function returns unavailable
+ * status without storing anything. DSCR is used as the primary creditworthiness metric.
+ *
  * @param loanApplicationId - The loan application ID
  * @param accessToken - Plaid access token
- * @returns LendScore result
+ * @returns LendScore result indicating unavailability
  */
 export async function getLendScoreForLoan(
   loanApplicationId: string,
   accessToken: string
 ): Promise<LendScoreResult> {
-  const result = await getLendScore(accessToken);
+  // Suppress unused variable warnings
+  void loanApplicationId;
+  void accessToken;
 
-  if (result.success && result.score) {
-    // Store the LendScore in the database
-    await prisma.loanApplication.update({
-      where: { id: loanApplicationId },
-      data: {
-        lendScore: result.score,
-        lendScoreReasonCodes: result.reasonCodes || [],
-        lendScoreRetrievedAt: new Date(),
-      },
-    });
-
-    console.log(
-      `[LendScore] Stored score for loan ${loanApplicationId}: ` +
-        `score=${result.score}, reasons=${result.reasonCodes?.join(', ')}`
-    );
-  }
-
-  return result;
+  // LendScore is not available - return unavailable status
+  // No database update needed since we're not storing anything
+  return {
+    success: false,
+    error: 'LendScore not available - Plaid Credit API integration pending',
+  };
 }
 
 /**
@@ -146,7 +129,8 @@ export const LENDSCORE_REASON_DESCRIPTIONS: Record<string, string> = {
   LIMITED_HISTORY: 'Limited transaction history available',
 
   // Neutral/Informational
-  MOCK_SANDBOX_DATA: 'Using sandbox test data',
+  MOCK_SANDBOX_DATA: '⚠️ Mock data - LendScore API pending integration',
+  MOCK_DATA: '⚠️ Mock data - LendScore API pending integration',
   RECENT_ACCOUNT: 'Account opened recently',
   SEASONAL_INCOME: 'Seasonal income pattern detected',
 };

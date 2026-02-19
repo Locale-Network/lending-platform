@@ -82,7 +82,7 @@ async function main() {
       transactionCount: 45,
       monthlyNoi: 850000,  // $8,500 * 100
       monthlyDebtService: 500000, // $5,000 * 100
-      dscrValue: 17000,  // 1.7 * 10000
+      dscrValue: 1700,  // 1.7 * 1000 (scaled by 1000 for 3 decimal precision)
       zkFetchProofHash: "abc123def456789012345678901234567890abcdef",
       calculatedAt: Date.now()
     },

@@ -18,20 +18,16 @@ import pino from 'pino';
 const isDevelopment = process.env.NODE_ENV === 'development';
 
 // Create base logger
+// Note: pino-pretty transport uses worker threads which crash with Next.js Turbopack.
+// We disable transport in development to avoid "worker has exited" errors.
+// This means logs will be JSON in dev, but you can pipe to pino-pretty manually if needed:
+//   npm run dev 2>&1 | npx pino-pretty
 export const logger = pino({
   level: process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info'),
 
-  // Use pino-pretty for development, JSON for production
-  transport: isDevelopment
-    ? {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'HH:MM:ss',
-          ignore: 'pid,hostname',
-        },
-      }
-    : undefined,
+  // Disable worker-based transport to avoid Turbopack crashes
+  // Logs are still functional, just not pretty-printed
+  transport: undefined,
 
   // Base fields included in every log
   base: {

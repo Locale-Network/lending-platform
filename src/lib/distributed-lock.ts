@@ -86,6 +86,10 @@ export async function acquireLock(
  * Uses a Lua script to atomically check ownership and release.
  * Only releases if the lockId matches, preventing accidental release of another instance's lock.
  *
+ * SECURITY: This uses EVAL with a Lua script to ensure atomicity.
+ * The GET-then-DELETE pattern has a race condition where another process
+ * could acquire the lock between the two operations.
+ *
  * @param key - The lock key used when acquiring
  * @param lockId - The lockId returned from acquireLock
  * @returns ReleaseLockResult with released status
@@ -108,42 +112,46 @@ export async function releaseLock(
   const lockKey = `lock:${key}`;
 
   try {
-    // First, get the current value to verify ownership
-    const getResponse = await fetch(`${url}/GET/${lockKey}`, {
+    // SECURITY FIX: Use Lua script for atomic check-and-delete
+    // This prevents the race condition where:
+    // 1. Process A checks lock value (matches)
+    // 2. Lock expires
+    // 3. Process B acquires new lock
+    // 4. Process A deletes Process B's lock (BAD!)
+    //
+    // The Lua script runs atomically on the Redis server
+    const luaScript = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      else
+        return 0
+      end
+    `;
+
+    // Upstash REST API expects EVAL in a specific format
+    const response = await fetch(`${url}/EVAL/${encodeURIComponent(luaScript)}/1/${encodeURIComponent(lockKey)}/${encodeURIComponent(lockId)}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
       },
     });
 
-    if (!getResponse.ok) {
-      return { released: false, error: 'Failed to check lock' };
-    }
-
-    const getResult = await getResponse.json();
-    const currentValue = getResult.result;
-
-    // If the lock value doesn't match our lockId, don't release
-    // This prevents releasing a lock that was acquired by another instance
-    if (currentValue !== lockId) {
-      console.warn(`[Distributed Lock] Lock ownership mismatch: ${lockKey}`);
-      return { released: false, error: 'Lock ownership mismatch' };
-    }
-
-    // Delete the lock
-    const delResponse = await fetch(`${url}/DEL/${lockKey}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    if (!delResponse.ok) {
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Distributed Lock] EVAL failed:', errorText);
       return { released: false, error: 'Failed to release lock' };
     }
 
-    console.log(`[Distributed Lock] Released lock: ${lockKey}`);
-    return { released: true };
+    const result = await response.json();
+
+    // Lua script returns 1 if deleted, 0 if key didn't exist or value didn't match
+    if (result.result === 1) {
+      console.log(`[Distributed Lock] Released lock: ${lockKey}`);
+      return { released: true };
+    } else {
+      console.warn(`[Distributed Lock] Lock ownership mismatch or expired: ${lockKey}`);
+      return { released: false, error: 'Lock ownership mismatch or already expired' };
+    }
   } catch (error) {
     console.error('[Distributed Lock] Error releasing lock:', error);
     return { released: false, error: error instanceof Error ? error.message : 'Unknown error' };

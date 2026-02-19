@@ -28,11 +28,7 @@ export const getStakingTokenBalanceAction = async (address: string): Promise<{ b
     ]);
     return { balance, symbol };
   } catch (error) {
-    // Return defaults if staking pool contract is not deployed or fails to read
-    if (process.env.NODE_ENV === 'development') {
-      return { balance: 0, symbol: 'USDC' };
-    }
-    console.warn('Failed to fetch staking token balance:', error);
+    console.error('Failed to fetch staking token balance:', error);
     return { balance: 0, symbol: 'USDC' };
   }
 };

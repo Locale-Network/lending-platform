@@ -27,31 +27,52 @@ const SALT_LENGTH = 16; // For key derivation
 // Version prefix for future algorithm migrations
 const ENCRYPTION_VERSION = 'v1';
 
+// Track if we've warned about development key to avoid spam
+let devKeyWarned = false;
+
 /**
  * Get the encryption key from environment
  * Uses scrypt to derive a proper key from the environment secret
+ *
+ * SECURITY: In development mode, a deterministic fallback key is used if
+ * DATABASE_ENCRYPTION_KEY is not set. This key is known and insecure.
+ * Always set a proper key in production.
  */
 function getEncryptionKey(): Buffer {
   const envKey = process.env.DATABASE_ENCRYPTION_KEY;
 
   if (!envKey) {
     // In development, warn and use a deterministic key (NOT for production)
-    if (process.env.NODE_ENV === 'development') {
-      logger.warn(
-        'DATABASE_ENCRYPTION_KEY not set - using development fallback. DO NOT use in production!'
-      );
-      // Deterministic key for development only
+    if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+      if (!devKeyWarned) {
+        logger.warn(
+          '⚠️  SECURITY WARNING: DATABASE_ENCRYPTION_KEY not set - using insecure development fallback. ' +
+          'Generate a key with: openssl rand -hex 32'
+        );
+        devKeyWarned = true;
+      }
+      // Deterministic key for development only - DO NOT USE IN PRODUCTION
       return Buffer.from('0'.repeat(64), 'hex');
     }
     throw new Error(
-      'DATABASE_ENCRYPTION_KEY environment variable is required for encryption'
+      'DATABASE_ENCRYPTION_KEY environment variable is required for encryption. ' +
+      'Generate with: openssl rand -hex 32'
     );
   }
 
   // Validate key format (should be 64 hex characters = 32 bytes)
   if (!/^[a-fA-F0-9]{64}$/.test(envKey)) {
     throw new Error(
-      'DATABASE_ENCRYPTION_KEY must be 64 hexadecimal characters (32 bytes)'
+      'DATABASE_ENCRYPTION_KEY must be 64 hexadecimal characters (32 bytes). ' +
+      'Generate with: openssl rand -hex 32'
+    );
+  }
+
+  // SECURITY: Reject all-zero key in production (the development fallback)
+  if (envKey === '0'.repeat(64) && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'DATABASE_ENCRYPTION_KEY cannot be the development fallback key in production. ' +
+      'Generate a secure key with: openssl rand -hex 32'
     );
   }
 

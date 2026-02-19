@@ -1,6 +1,8 @@
 import prisma from '@prisma/index';
 import { syncAndSubmitToCartesi } from '@/services/plaid/zkFetchWrapper';
 import { decryptField } from '@/lib/encryption';
+import { DEFAULT_INTEREST_RATE_PERCENT } from '@/lib/interest-rate';
+import { FundingUrgencyToTermMonths, type FundingUrgencyType } from '@/app/borrower/loans/apply/form-schema';
 
 export interface DSCRCalculationResult {
   submitted: number;
@@ -64,6 +66,7 @@ export async function calculateAndSubmitDSCR(loanId: string): Promise<void> {
     select: {
       id: true,
       requestedAmount: true,
+      fundingUrgency: true,
       transactionWindowMonths: true,
       plaidAccessToken: true,
       plaidTransactionsCursor: true,
@@ -95,12 +98,15 @@ export async function calculateAndSubmitDSCR(loanId: string): Promise<void> {
   // Decrypt the access token before use
   const accessToken = decryptField(encryptedToken);
 
-  // Get loan amount for monthly debt service calculation
+  // Get loan amount and term for monthly debt service calculation
   const loanAmount = loan.requestedAmount ? Number(loan.requestedAmount) : 0;
-  const termMonths = 24; // Default term
+  const termMonths = loan.fundingUrgency
+    ? FundingUrgencyToTermMonths[loan.fundingUrgency as FundingUrgencyType] || 24
+    : 24;
 
-  // Calculate monthly debt service (at 10% APR)
-  const annualRate = 0.10;
+  // Calculate monthly debt service using default interest rate for pre-approval estimation
+  // The actual rate will be determined after DSCR is verified via calculateInterestRateFromDSCR()
+  const annualRate = DEFAULT_INTEREST_RATE_PERCENT / 100; // Convert percentage to decimal (10% -> 0.10)
   const monthlyRate = annualRate / 12;
   const monthlyDebtService =
     loanAmount > 0
@@ -117,7 +123,8 @@ export async function calculateAndSubmitDSCR(loanId: string): Promise<void> {
     borrowerAddress: loan.accountAddress,
     cursor: loan.plaidTransactionsCursor || undefined,
     monthlyDebtService,
-    loanAmount: loanAmount > 0 ? BigInt(loanAmount) : undefined
+    loanAmount: loanAmount > 0 ? BigInt(loanAmount) : undefined,
+    termMonths,
   });
 
   if (!result.success) {

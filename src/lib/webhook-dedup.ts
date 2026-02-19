@@ -103,19 +103,80 @@ export async function markWebhookProcessed(
 /**
  * Check and mark in a single atomic operation
  * Returns true if this is a NEW webhook that should be processed
+ *
+ * SECURITY: Uses Redis SETNX (set if not exists) for atomic check-and-mark.
+ * This prevents double-processing where:
+ * 1. Process A checks - not processed
+ * 2. Process B checks - not processed
+ * 3. Process A marks as processed
+ * 4. Process B marks as processed
+ * 5. BOTH process the webhook (double-spend!)
  */
 export async function checkAndMarkWebhook(
   webhookId: string,
-  provider: string
+  provider: string,
+  ttlSeconds: number = 86400
 ): Promise<{ isNew: boolean }> {
-  const wasProcessed = await isWebhookProcessed(webhookId, provider);
+  const key = `webhook:${provider}:${webhookId}`;
+  const now = Date.now();
 
-  if (wasProcessed) {
-    log.warn({ webhookId, provider }, 'Duplicate webhook detected - skipping');
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  // Use Redis if available - atomic SETNX operation
+  if (url && token) {
+    try {
+      // SECURITY FIX: Use SET NX EX for atomic check-and-set
+      // NX = only set if not exists
+      // EX = set expiration
+      // This is atomic - if the key exists, it returns null, otherwise sets and returns OK
+      const response = await fetch(
+        `${url}/SET/${encodeURIComponent(key)}/${now}/NX/EX/${ttlSeconds}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!response.ok) {
+        log.error({ status: response.status }, 'Redis SET NX failed');
+        // Fall back to in-memory (less safe but better than failing)
+        return checkAndMarkInMemory(key, now);
+      }
+
+      const result = await response.json();
+
+      // SET NX returns "OK" if the key was set (new webhook)
+      // Returns null if the key already existed (duplicate)
+      if (result.result === 'OK') {
+        return { isNew: true };
+      } else {
+        log.warn({ webhookId, provider }, 'Duplicate webhook detected - skipping');
+        return { isNew: false };
+      }
+    } catch (error) {
+      log.error({ err: error }, 'Redis connection error in checkAndMarkWebhook');
+      return checkAndMarkInMemory(key, now);
+    }
+  }
+
+  // Fallback to in-memory (not safe for distributed systems)
+  return checkAndMarkInMemory(key, now);
+}
+
+/**
+ * In-memory atomic check-and-mark (for development only)
+ * NOTE: This is NOT safe for distributed/serverless - use Redis in production
+ */
+function checkAndMarkInMemory(key: string, timestamp: number): { isNew: boolean } {
+  cleanupInMemory();
+
+  if (processedWebhooks.has(key)) {
+    log.warn({ key }, 'Duplicate webhook detected (in-memory) - skipping');
     return { isNew: false };
   }
 
-  await markWebhookProcessed(webhookId, provider);
+  processedWebhooks.set(key, timestamp);
   return { isNew: true };
 }
 

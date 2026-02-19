@@ -1,15 +1,40 @@
 'use client';
 
 import type { PrivyClientConfig } from '@privy-io/react-auth';
+import { arbitrum, arbitrumSepolia } from 'viem/chains';
+
+const CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID ? parseInt(process.env.NEXT_PUBLIC_CHAIN_ID, 10) : undefined;
+
+function getDefaultChain() {
+  switch (CHAIN_ID) {
+    case 421614: return arbitrumSepolia;
+    case 42161: return arbitrum;
+    default: return arbitrum;
+  }
+}
 
 /**
  * Privy Configuration
  *
- * Replaces Alchemy Account Kit for authentication.
- * Alchemy is still used for gas sponsorship via smart accounts.
+ * Auth: Privy (email, Google, wallet login)
+ * Gas sponsorship: Alchemy Smart Wallets, configured in Privy dashboard
  */
 
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
+
 export const privyConfig: PrivyClientConfig = {
+  defaultChain: getDefaultChain(),
+  supportedChains: [arbitrumSepolia, arbitrum],
+
+  // Custom RPC URLs — overrides Privy's default RPC proxy which can be unreliable
+  ...(RPC_URL && CHAIN_ID ? {
+    rpcConfig: {
+      rpcUrls: {
+        [CHAIN_ID]: RPC_URL,
+      },
+    },
+  } : {}),
+
   // Login methods
   loginMethods: ['email', 'google', 'wallet'],
 

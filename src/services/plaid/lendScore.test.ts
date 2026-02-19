@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mockLoanApplication } from '@/__tests__/mocks/prisma';
 
 // Mock dependencies
 const { mockPrisma } = vi.hoisted(() => ({
@@ -41,41 +40,24 @@ describe('lendScore', () => {
   });
 
   describe('getLendScore', () => {
-    it('should return mock LendScore data', async () => {
+    it('should return unavailable status (LendScore not implemented)', async () => {
       const result = await getLendScore('test-access-token');
 
-      expect(result.success).toBe(true);
-      expect(result.score).toBe(75);
-      expect(result.reasonCodes).toContain('MOCK_DATA');
-      expect(result.reasonCodes).toContain('CONSISTENT_INCOME');
-    });
-
-    it('should include multiple reason codes', async () => {
-      const result = await getLendScore('test-access-token');
-
-      expect(result.reasonCodes).toHaveLength(3);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('LendScore not available');
+      expect(result.score).toBeUndefined();
     });
   });
 
   describe('getLendScoreForLoan', () => {
-    it('should retrieve and store LendScore for loan', async () => {
-      mockPrisma.loanApplication.update.mockResolvedValueOnce(
-        mockLoanApplication({ lendScore: 75 })
-      );
-
+    it('should return unavailable status without updating database', async () => {
       const result = await getLendScoreForLoan('loan-123', 'access-token');
 
-      expect(result.success).toBe(true);
-      expect(result.score).toBe(75);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('LendScore not available');
 
-      expect(mockPrisma.loanApplication.update).toHaveBeenCalledWith({
-        where: { id: 'loan-123' },
-        data: {
-          lendScore: 75,
-          lendScoreReasonCodes: expect.arrayContaining(['MOCK_DATA']),
-          lendScoreRetrievedAt: expect.any(Date),
-        },
-      });
+      // Should NOT call database update since LendScore is unavailable
+      expect(mockPrisma.loanApplication.update).not.toHaveBeenCalled();
     });
   });
 

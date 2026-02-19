@@ -10,7 +10,9 @@ const nextConfig = {
   serverExternalPackages: ['koffi', '@reclaimprotocol/zk-fetch'],
 
   // Turbopack config for Next.js 16
-  turbopack: {},
+  turbopack: {
+    root: process.cwd(),
+  },
 
   webpack: config => {
     config.resolve.fallback = { fs: false, net: false, tls: false };
@@ -76,7 +78,7 @@ const nextConfig = {
               // Fonts
               "font-src 'self' data: https://fonts.gstatic.com",
               // API connections - explicit allowlist
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.alchemy.com wss://*.alchemy.com https://*.walletconnect.com wss://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.org https://pulse.walletconnect.org https://api.web3modal.org https://arb1.arbitrum.io https://*.arbitrum.io https://*.privy.io wss://*.privy.io https://*.plaid.com https://api.circle.com",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.alchemy.com wss://*.alchemy.com https://*.walletconnect.com wss://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.org https://pulse.walletconnect.org https://api.web3modal.org https://arb1.arbitrum.io https://*.arbitrum.io https://*.privy.io wss://*.privy.io https://*.privy.systems https://*.plaid.com https://api.circle.com",
               // Iframes - restrict to auth/wallet providers
               "frame-src 'self' https://*.walletconnect.com https://*.walletconnect.org https://verify.walletconnect.com https://verify.walletconnect.org https://auth.turnkey.com https://*.privy.io https://cdn.plaid.com https://*.plaid.com",
               // Prevent embedding this site in iframes (clickjacking protection)

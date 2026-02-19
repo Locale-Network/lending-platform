@@ -3,6 +3,8 @@ import 'server-only';
 import { Contract, JsonRpcProvider, Wallet, EventLog } from 'ethers';
 import { stakingPoolAbi, erc20Abi } from '@/lib/contracts/stakingPool';
 import prisma from '@prisma/index';
+import { getEthersGasOverrides } from '@/lib/contracts/gas-safety';
+import { USDC_UNIT } from '@/lib/constants/business';
 
 /**
  * Pool Bridge Service
@@ -66,6 +68,10 @@ function getToken(): Contract {
   return _token;
 }
 
+export function getPoolAdminAddress(): string {
+  return getSigner().address;
+}
+
 export interface TransferResult {
   success: boolean;
   txHash?: string;
@@ -88,8 +94,11 @@ export async function transferToLoanPool(
       throw new Error('SIMPLE_LOAN_POOL_ADDRESS not configured');
     }
 
+    // Check gas price before submitting
+    const gasOverrides = await getEthersGasOverrides(getProvider());
+
     // Execute transfer
-    const tx = await stakingPool.transferToLoanPool(amount, simpleLoanPoolAddress);
+    const tx = await stakingPool.transferToLoanPool(amount, simpleLoanPoolAddress, gasOverrides);
     const receipt = await tx.wait();
 
     if (receipt.status === 0) {
@@ -148,15 +157,18 @@ export async function distributeYield(
     const signer = getSigner();
     const stakingPoolAddress = await stakingPool.getAddress();
 
+    // Check gas price before submitting
+    const gasOverrides = await getEthersGasOverrides(getProvider());
+
     // Approve StakingPool to spend tokens for yield distribution
     const allowance = await token.allowance(signer.address, stakingPoolAddress);
     if (allowance < amount) {
-      const approveTx = await token.approve(stakingPoolAddress, amount);
+      const approveTx = await token.approve(stakingPoolAddress, amount, gasOverrides);
       await approveTx.wait();
     }
 
     // Distribute yield
-    const tx = await stakingPool.distributeYield(contractPoolId, amount);
+    const tx = await stakingPool.distributeYield(contractPoolId, amount, gasOverrides);
     const receipt = await tx.wait();
 
     if (receipt.status === 0) {
@@ -186,6 +198,39 @@ export async function distributeYield(
     };
   } catch (error) {
     console.error('distributeYield failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Waive or restore cooldown period for a pool on StakingPool contract
+ * When waived, investors can unstake immediately without waiting for cooldown
+ */
+export async function setPoolCooldownWaived(
+  contractPoolId: string,
+  waived: boolean
+): Promise<TransferResult> {
+  try {
+    const stakingPool = getStakingPool();
+    const gasOverrides = await getEthersGasOverrides(getProvider());
+
+    const tx = await stakingPool.setPoolCooldownWaived(contractPoolId, waived, gasOverrides);
+    const receipt = await tx.wait();
+
+    if (receipt.status === 0) {
+      throw new Error('Transaction failed on-chain');
+    }
+
+    return {
+      success: true,
+      txHash: receipt.hash,
+      blockNumber: receipt.blockNumber,
+    };
+  } catch (error) {
+    console.error('setPoolCooldownWaived failed:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -239,13 +284,10 @@ export async function getPoolBalancesSummary(): Promise<{
     getTotalTransferredToLoanPool(),
   ]);
 
-  // Format to human-readable (assuming 6 decimals for USDC)
-  const decimals = BigInt(1e6);
-
   return {
-    stakingPoolBalance: (stakingBalance / decimals).toString(),
-    simpleLoanPoolBalance: (loanBalance / decimals).toString(),
-    totalTransferred: (totalTransferred / decimals).toString(),
+    stakingPoolBalance: (stakingBalance / USDC_UNIT).toString(),
+    simpleLoanPoolBalance: (loanBalance / USDC_UNIT).toString(),
+    totalTransferred: (totalTransferred / USDC_UNIT).toString(),
   };
 }
 

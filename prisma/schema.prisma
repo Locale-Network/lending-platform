@@ -1,6 +1,5 @@
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -90,6 +89,18 @@ model Account {
   borrowerNFTTokenId String? @map("borrower_nft_token_id")
   investorNFTTokenId String? @map("investor_nft_token_id")
 
+  // Accreditation self-certification (506(b) compliance)
+  accreditationCertifiedAt DateTime? @map("accreditation_certified_at")
+  accreditationMethod      String?   @map("accreditation_method")
+
+  // Jurisdiction gate (Reg D / Reg S compliance)
+  jurisdictionType        JurisdictionType? @map("jurisdiction_type")
+  jurisdictionCountry     String?           @map("jurisdiction_country") @db.VarChar(2)  // ISO 3166-1 alpha-2
+  jurisdictionState       String?           @map("jurisdiction_state") @db.VarChar(2)    // US state code
+  regSCertifications      Json?             @map("reg_s_certifications")                 // Accepted Reg S certification keys
+  jurisdictionCertifiedAt DateTime?         @map("jurisdiction_certified_at")
+  detectedIpCountry       String?           @map("detected_ip_country") @db.VarChar(2)   // Vercel x-vercel-ip-country (audit only)
+
   // Timestamps
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -100,6 +111,7 @@ model Account {
   loanApplications        LoanApplication[]
   investorStakes          InvestorStake[]
   notificationPreferences NotificationPreferences?
+  stripeCustomer          StripeCustomer?
 
   @@index([email])
   @@index([role])
@@ -177,7 +189,7 @@ model LoanApplication {
   businessLegalStructure  String  @map("business_legal_structure") @db.VarChar(255)
   businessWebsite         String? @map("business_website")
   businessPrimaryIndustry String  @map("business_primary_industry") @db.VarChar(255)
-  businessDescription     String  @map("business_description") @db.VarChar(255)
+  businessDescription     String  @map("business_description") @db.Text
 
   // Credit Score
   creditScore CreditScore[]
@@ -231,6 +243,10 @@ model LoanApplication {
   fundingUrgency        String?  @map("funding_urgency") @db.VarChar(50) // within_week, within_2_weeks, within_month, just_browsing
   loanPurpose           String?  @map("loan_purpose") @db.VarChar(100) // expansion, equipment_purchase, etc.
 
+  // Target pool selected by borrower during application
+  targetPoolId String?   @map("target_pool_id")
+  targetPool   LoanPool? @relation("LoanApplicationTargetPool", fields: [targetPoolId], references: [id])
+
   // NEW: Credit Score (from form step 3 - self-reported)
   estimatedCreditScore  String?  @map("estimated_credit_score") @db.VarChar(20) // excellent, good, fair, poor
 
@@ -249,6 +265,9 @@ model LoanApplication {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([accountAddress])
+  @@index([status])
+  @@index([createdAt])
+  @@index([status, createdAt])
   @@map("loan_applications")
 }
 
@@ -330,6 +349,12 @@ enum PoolType {
   MIXED
 }
 
+// Jurisdiction type for Reg D / Reg S compliance
+enum JurisdictionType {
+  US_PERSON
+  NON_US_PERSON
+}
+
 // SEC exemption types for investor eligibility
 enum ExemptionType {
   NONE          // No exemption requirements
@@ -337,12 +362,20 @@ enum ExemptionType {
   REG_D_506C    // Reg D 506(c) - accredited only, general solicitation allowed
   REG_A         // Reg A - public offering with limits
   REG_CF        // Regulation Crowdfunding
+  REG_S         // Regulation S - offshore transactions
 }
 
 enum StakeStatus {
   ACTIVE
   UNSTAKING
   WITHDRAWN
+}
+
+// Borrower structure type for pool risk scoring
+enum BorrowerType {
+  SINGLE_BORROWER // Single entity, composite scoring N/A
+  MULTI_BORROWER  // Multiple borrowers, composite scoring enabled
+  SYNDICATED      // Future: consortium lending
 }
 
 // Investment pools for lending
@@ -384,6 +417,19 @@ model LoanPool {
   cooldownPeriodSeconds       Int?           @map("cooldown_period_seconds") // Per-pool cooldown
   maturityDate                DateTime?      @map("maturity_date") // When pool matures
 
+  // Pool borrower structure (for risk scoring)
+  borrowerType BorrowerType @default(MULTI_BORROWER) @map("borrower_type")
+
+  // Composite risk metrics (cached, updated on DSCR calculations)
+  compositeRiskScore    Float?    @map("composite_risk_score") // 0-100 score
+  compositeRiskTier     String?   @map("composite_risk_tier") // Low/Moderate/Medium/High/Very High Risk
+  weightedAvgDscr       Float?    @map("weighted_avg_dscr")
+  weightedAvgRate       Float?    @map("weighted_avg_rate") // Basis points
+  weightedAvgLendScore  Float?    @map("weighted_avg_lendscore")
+  diversificationScore  Float?    @map("diversification_score") // 0-100
+  hhiIndex              Float?    @map("hhi_index") // Herfindahl-Hirschman Index 0-1
+  compositeCalculatedAt DateTime? @map("composite_calculated_at")
+
   // Calculated fields (updated by backend)
   totalStaked        Float  @default(0) @map("total_staked")
   totalInvestors     Int    @default(0) @map("total_investors")
@@ -401,6 +447,7 @@ model LoanPool {
   // Relations
   stakes             InvestorStake[]
   loans              PoolLoan[]
+  loanApplications   LoanApplication[] @relation("LoanApplicationTargetPool")
   yieldDistributions YieldDistribution[]
   poolTransfers      PoolTransfer[]
   documents          PoolDocument[]
@@ -847,16 +894,17 @@ enum PaymentStatus {
 
 enum PaymentProvider {
   CIRCLE
+  STRIPE
   MANUAL
 }
 
-// Track payment records from Circle ACH
+// Track payment records from ACH payments (Stripe or legacy Circle)
 model PaymentRecord {
   id String @id @default(cuid())
 
   // External payment tracking
   externalPaymentId String  @unique @map("external_payment_id") @db.VarChar(255)
-  provider          PaymentProvider @default(CIRCLE)
+  provider          PaymentProvider @default(STRIPE)
 
   // Loan association
   loanApplicationId String          @map("loan_application_id")
@@ -884,5 +932,35 @@ model PaymentRecord {
   @@index([status])
   @@index([createdAt])
   @@map("payment_records")
+}
+
+// Stripe customer mapping for ACH payments
+model StripeCustomer {
+  id               String @id @default(cuid())
+  stripeCustomerId String @unique @map("stripe_customer_id") @db.VarChar(255)
+
+  // Account association
+  accountAddress String  @unique @map("account_address") @db.VarChar(255)
+  account        Account @relation(fields: [accountAddress], references: [address], onDelete: Cascade)
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("stripe_customers")
+}
+
+// Admin-configurable list of US states where the platform is available
+model AllowedState {
+  id        String  @id @default(cuid())
+  stateCode String  @unique @map("state_code") @db.VarChar(2)   // e.g., "MO"
+  stateName String  @map("state_name") @db.VarChar(100)          // e.g., "Missouri"
+  isActive  Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@map("allowed_states")
 }
 

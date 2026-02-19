@@ -4,7 +4,15 @@ import { Configuration, PlaidApi, PlaidEnvironments, Products } from 'plaid';
 
 const PLAID_CLIENT_ID = process.env.PLAID_CLIENT_ID;
 const PLAID_SECRET = process.env.PLAID_SECRET;
-const PLAID_ENV = process.env.PLAID_ENV || 'sandbox';
+const PLAID_ENV = process.env.PLAID_ENV;
+
+// Production safety: Fail fast if PLAID_ENV is not explicitly set
+if (!PLAID_ENV) {
+  throw new Error(
+    'PLAID_ENV environment variable is required. ' +
+    'Set to "sandbox", "development", or "production".'
+  );
+}
 
 const configuration = new Configuration({
   basePath: PlaidEnvironments[PLAID_ENV],

@@ -28,12 +28,14 @@ export async function updateEmailAction(email: string): Promise<UpdateEmailResul
 
     const normalizedEmail = email.trim().toLowerCase() || null;
 
+    const address = session.address.toLowerCase();
+
     // Check if email is already in use by another account
     if (normalizedEmail) {
       const existingAccount = await prisma.account.findFirst({
         where: {
           email: normalizedEmail,
-          NOT: { address: session.address },
+          NOT: { address },
         },
       });
 
@@ -44,7 +46,7 @@ export async function updateEmailAction(email: string): Promise<UpdateEmailResul
 
     // Update the account email
     const updatedAccount = await prisma.account.update({
-      where: { address: session.address },
+      where: { address },
       data: { email: normalizedEmail },
     });
 
@@ -68,7 +70,7 @@ export async function getAccountEmailAction(): Promise<string | null> {
     }
 
     const account = await prisma.account.findUnique({
-      where: { address: session.address },
+      where: { address: session.address.toLowerCase() },
       select: { email: true },
     });
 

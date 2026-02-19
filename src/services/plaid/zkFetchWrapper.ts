@@ -6,6 +6,7 @@ import { submitInput } from '@/services/cartesi';
 import { pollAndRelayNotices } from '@/services/relay';
 import prisma from '@prisma/index';
 import crypto from 'crypto';
+import { subMonths } from 'date-fns';
 import {
   logZkFetchOperation,
   createOperationTimer,
@@ -459,6 +460,7 @@ export async function syncAndSubmitToCartesi(params: {
   cursor?: string;
   monthlyDebtService: number;
   loanAmount?: bigint; // Requested loan amount for Cartesi loan creation
+  termMonths?: number; // Loan term in months (from borrower's funding urgency selection)
 }): Promise<{
   success: boolean;
   transactionsAdded: number;
@@ -467,7 +469,7 @@ export async function syncAndSubmitToCartesi(params: {
   newCursor: string | null;
   error?: string;
 }> {
-  const { loanId, accessToken, borrowerAddress, cursor, monthlyDebtService, loanAmount } = params;
+  const { loanId, accessToken, borrowerAddress, cursor, monthlyDebtService, loanAmount, termMonths } = params;
 
   const operationTimer = createOperationTimer();
 
@@ -523,8 +525,8 @@ export async function syncAndSubmitToCartesi(params: {
     // Step 3: Calculate DSCR data for Cartesi submission
     // Use a rolling 3-month window for DSCR calculation
     const DSCR_WINDOW_MONTHS = 3;
-    const windowStartDate = new Date();
-    windowStartDate.setMonth(windowStartDate.getMonth() - DSCR_WINDOW_MONTHS);
+    // Use date-fns subMonths for correct month arithmetic (handles year boundaries properly)
+    const windowStartDate = subMonths(new Date(), DSCR_WINDOW_MONTHS);
 
     // Fetch UNIQUE transactions within the DSCR window
     const allTransactions = await prisma.transaction.findMany({
@@ -590,7 +592,7 @@ export async function syncAndSubmitToCartesi(params: {
         loan_id: loanId,
         borrower_address: borrowerAddress,
         amount: loanAmount.toString(),
-        term_months: 24, // Default term
+        term_months: termMonths || 24,
       };
 
       try {
@@ -615,7 +617,7 @@ export async function syncAndSubmitToCartesi(params: {
         transactionCount: allTransactions.length,
         monthlyNoi: Math.round(monthlyNoi * 100), // Scale by 100 for precision
         monthlyDebtService: Math.round(monthlyDebtService * 100),
-        dscrValue: Math.round(dscrValue * 10000), // Scale by 10000 for 4 decimal places
+        dscrValue: Math.round(dscrValue * 1000), // Scale by 1000 for 3 decimal places (consistent with all other DSCR handling)
         zkFetchProofHash: zkResult.proofHash,
         calculatedAt: Math.floor(Date.now() / 1000),
       },
@@ -648,13 +650,17 @@ export async function syncAndSubmitToCartesi(params: {
         `proofHash=${zkResult.proofHash?.slice(0, 16)}...`
     );
 
-    // Step 6: Update loan sync metadata
+    // Step 6: Update loan sync metadata and ensure loanAmount is saved
     // Note: We don't have next_cursor from zkFetch response parsing yet
     // This would need to be extracted from the full response
+    // Also ensure loanAmount is set for DSCR status endpoint (fallback if not already saved)
     await prisma.loanApplication.update({
       where: { id: loanId },
       data: {
         lastSyncedAt: new Date(),
+        // Ensure loanAmount is set (USDC with 6 decimals) for DSCR status endpoint
+        // This is a fallback - normally saved via "Save & Continue" in Step 2
+        ...(loanAmount && loanAmount > 0n ? { loanAmount: loanAmount * BigInt(1_000_000) } : {}),
       },
     });
 

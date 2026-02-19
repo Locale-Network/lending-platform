@@ -11,6 +11,18 @@
         {
             "path": "/api/cron/distribute-yield",
             "schedule": "0 */6 * * *"
+        },
+        {
+            "path": "/api/cron/relay-notices",
+            "schedule": "*/1 * * * *"
+        },
+        {
+            "path": "/api/cron/composite-risk",
+            "schedule": "0 0,6,12,18 * * *"
+        },
+        {
+            "path": "/api/cron/index-staking-events",
+            "schedule": "*/5 * * * *"
         }
     ]
 }
