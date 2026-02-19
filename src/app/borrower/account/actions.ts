@@ -148,8 +148,27 @@ export async function retryIdentityVerification(
 
 export const createKycVerificationRecord = async (
   accountAddress: string,
-  identityVerificationId: string
+  linkSessionId: string
 ) => {
+  // The onSuccess callback provides link_session_id, not the identity_verification_id.
+  // Look up the actual IDV session from Plaid using the user's client_user_id.
+  let identityVerificationId = linkSessionId; // fallback
+
+  try {
+    const listResponse = await plaidClient.identityVerificationList({
+      template_id: process.env.TEMPLATE_ID || 'idvtmp_bY4ArB8RemRoue',
+      client_user_id: accountAddress,
+    });
+
+    const idvSessions = listResponse.data.identity_verifications;
+    if (idvSessions.length > 0) {
+      // Use the most recent IDV session
+      identityVerificationId = idvSessions[0].id;
+    }
+  } catch (error) {
+    console.warn('[KYC] Failed to look up IDV session from Plaid, using linkSessionId as fallback:', error);
+  }
+
   await dbCreateKycVerification({
     accountAddress,
     identityVerificationId,

@@ -28,14 +28,18 @@ import {
   Activity,
   FileText,
   Sparkles,
+  Banknote,
 } from 'lucide-react';
 import LoadingDots from '@/components/ui/loading-dots';
-import { HoldToConfirmButton } from '@/components/ui/hold-to-confirm-button';
+import { HoldConfirmModal } from '@/components/ui/hold-confirm-modal';
 import Link from 'next/link';
 import useSWR from 'swr';
 import { useToast } from '@/hooks/use-toast';
 import { useWalletAuth } from '@/hooks/useWalletAuth';
 import { parseUnits, formatUnits } from 'viem';
+import { LoanMetricsCard, NoLoansCard } from '@/components/pools/loan-metrics-card';
+import { PoolRiskDashboard } from '@/components/pools/pool-risk-dashboard';
+import { getExplorerUrl } from '@/lib/explorer';
 import {
   usePoolDetails,
   useUserStake,
@@ -45,6 +49,8 @@ import {
   useCompleteUnstake,
   useCancelUnstake,
   useStake,
+  useAvailableYield,
+  useClaimYield,
 } from '@/hooks/useStakingPool';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
@@ -56,6 +62,10 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
   const [unstakeAmount, setUnstakeAmount] = useState('');
   const [showStakeModal, setShowStakeModal] = useState(false);
   const [showUnstakeModal, setShowUnstakeModal] = useState(false);
+  const [showStakeConfirmModal, setShowStakeConfirmModal] = useState(false);
+  const [showUnstakeConfirmModal, setShowUnstakeConfirmModal] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [showCancelUnstakeModal, setShowCancelUnstakeModal] = useState(false);
   const [stakingStep, setStakingStep] = useState<'idle' | 'approving' | 'staking' | 'success'>('idle');
 
   const { toast } = useToast();
@@ -63,6 +73,16 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
 
   // Fetch pool data from API
   const { data: pool, error, isLoading, mutate } = useSWR(`/api/pools/public/${resolvedParams.slug}`, fetcher);
+
+  // Fetch loan metrics and risk data for investor transparency
+  const { data: loansData, isLoading: loansLoading } = useSWR(
+    pool ? `/api/pools/public/${resolvedParams.slug}/loans` : null,
+    fetcher
+  );
+  const { data: riskData, isLoading: riskLoading } = useSWR(
+    pool ? `/api/pools/public/${resolvedParams.slug}/risk-metrics` : null,
+    fetcher
+  );
 
   // Wagmi hooks for contract interaction - use pool slug for hashing
   const {
@@ -104,11 +124,22 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
     reset: resetCancelUnstake,
   } = useCancelUnstake();
 
+  const {
+    claimYield,
+    isPending: isClaimingYield,
+    isConfirmed: isClaimYieldConfirmed,
+    error: claimYieldError,
+    reset: resetClaimYield,
+  } = useClaimYield();
+
   const { stake: stakeTokens } = useStake();
 
   // Get user's on-chain stake data
   const { stake: userStakeOnChain, refetch: refetchUserStake } = useUserStake(pool?.slug);
+  const { availableYield, refetch: refetchYield } = useAvailableYield(pool?.slug);
   const { tokenAddress } = useStakingToken();
+  // Get on-chain pool details (for cooldownWaived flag)
+  const { pool: onChainPool } = usePoolDetails(pool?.slug);
 
   // Derived state
   const isStaking = isApproving || isStakingContract || stakingStep === 'approving' || stakingStep === 'staking';
@@ -122,22 +153,29 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
     : 0;
 
   // Calculate estimated shares and returns
-  const estimatedShares = stakeAmount ? parseFloat(stakeAmount) * 0.97 : 0; // Mock 3% fee
+  // Note: Actual share calculation happens on-chain - this is just 1:1 for display
+  // The smart contract determines the actual share ratio based on pool state
+  const estimatedShares = stakeAmount ? parseFloat(stakeAmount) : 0;
   const estimatedAnnualReturn = stakeAmount && pool?.annualizedReturn
     ? (parseFloat(stakeAmount) * pool.annualizedReturn) / 100
     : 0;
   const estimatedMonthlyReturn = estimatedAnnualReturn / 12;
 
   // Format user stake data from on-chain
+  const availableYieldFormatted = Number(formatUnits(availableYield, 6));
+
   const userStakeData = userStakeOnChain ? {
     hasStake: userStakeOnChain.amount > 0n,
     amount: Number(formatUnits(userStakeOnChain.amount, 6)),
     shares: Number(formatUnits(userStakeOnChain.shares, 6)),
-    rewards: 0, // Calculate from share value vs staked amount
+    rewards: availableYieldFormatted,
     pendingUnstake: Number(formatUnits(userStakeOnChain.pendingUnstake, 6)),
     hasPendingUnstake: userStakeOnChain.pendingUnstake > 0n,
     canWithdrawAt: Number(userStakeOnChain.canWithdrawAt),
-    canWithdrawNow: userStakeOnChain.canWithdrawAt > 0n && Number(userStakeOnChain.canWithdrawAt) * 1000 <= Date.now(),
+    canWithdrawNow: userStakeOnChain.pendingUnstake > 0n && (
+      onChainPool?.cooldownWaived === true ||
+      (userStakeOnChain.canWithdrawAt > 0n && Number(userStakeOnChain.canWithdrawAt) * 1000 <= Date.now())
+    ),
   } : null;
 
   // Handle approval confirmation then stake
@@ -177,17 +215,34 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
     }
   }, [stakeError]);
 
-  // Handle unstake confirmation
+  // Handle unstake confirmation — auto-complete when cooldown is waived
   useEffect(() => {
     if (isUnstakeConfirmed) {
       setShowUnstakeModal(false);
       setUnstakeAmount('');
       refetchUserStake();
       mutate();
-      toast({
-        title: 'Unstake Requested!',
-        description: 'Funds will be available after 7-day cooldown period.',
-      });
+
+      if (onChainPool?.cooldownWaived) {
+        // Cooldown waived — automatically complete the unstake in one flow
+        toast({
+          title: 'Unstake Requested — Completing Withdrawal...',
+          description: 'Cooldown waived. Automatically withdrawing your funds.',
+        });
+        const poolSlug = pool?.slug || resolvedParams.slug;
+        completeUnstake(poolSlug).catch((err) => {
+          toast({
+            title: 'Auto-Withdraw Failed',
+            description: 'Unstake request succeeded but withdrawal failed. Click "Withdraw Funds" to complete manually.',
+            variant: 'destructive',
+          });
+        });
+      } else {
+        toast({
+          title: 'Unstake Requested!',
+          description: 'Funds will be available after the cooldown period.',
+        });
+      }
     }
   }, [isUnstakeConfirmed]);
 
@@ -217,6 +272,31 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
     }
   }, [isCancelUnstakeConfirmed]);
 
+  // Handle claim yield confirmation
+  useEffect(() => {
+    if (isClaimYieldConfirmed) {
+      refetchUserStake();
+      refetchYield();
+      mutate();
+      toast({
+        title: 'Interest Claimed!',
+        description: 'Earned interest has been sent to your wallet.',
+      });
+      resetClaimYield();
+    }
+  }, [isClaimYieldConfirmed]);
+
+  // Handle claim yield error
+  useEffect(() => {
+    if (claimYieldError) {
+      toast({
+        title: 'Claim Failed',
+        description: claimYieldError.message || 'An error occurred while claiming interest.',
+        variant: 'destructive',
+      });
+    }
+  }, [claimYieldError]);
+
   const handleStake = async () => {
     const minStake = pool.minimumStake || 100;
     if (!stakeAmount || parseFloat(stakeAmount) < minStake) {
@@ -232,6 +312,27 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
       toast({
         title: 'Not Connected',
         description: 'Please connect your wallet to stake.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Verify KYC/investor credential before staking
+    try {
+      const kycRes = await fetch(`/api/investor/kyc-check?address=${address}`);
+      const kycData = await kycRes.json();
+      if (!kycData.hasCredential) {
+        toast({
+          title: 'KYC Required',
+          description: 'You must complete identity verification before staking. Visit your profile to get started.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    } catch {
+      toast({
+        title: 'Verification Check Failed',
+        description: 'Unable to verify your KYC status. Please try again later.',
         variant: 'destructive',
       });
       return;
@@ -447,7 +548,6 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                 </Badge>
               )}
             </div>
-            <div className="text-base text-muted-foreground" dangerouslySetInnerHTML={{ __html: pool.description || '' }} />
           </div>
 
           {/* Key Metrics Cards */}
@@ -525,7 +625,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
           <Tabs defaultValue="overview" className="w-full">
             <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="performance">Performance</TabsTrigger>
+              <TabsTrigger value="financials">Financials</TabsTrigger>
               <TabsTrigger value="loans">Active Loans</TabsTrigger>
               <TabsTrigger value="terms">Terms & Fees</TabsTrigger>
               <TabsTrigger value="documents">Documents</TabsTrigger>
@@ -552,7 +652,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Risk Metrics</CardTitle>
+                  <CardTitle>Pool Requirements</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-4 md:grid-cols-2">
@@ -575,34 +675,145 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Pool Risk Analytics - sourced from Cartesi */}
+              <PoolRiskDashboard
+                riskMetrics={riskData?.simpleMetrics}
+                compositeMetrics={riskData?.compositeMetrics}
+                borrowerType={riskData?.pool?.borrowerType}
+                isLoading={riskLoading}
+              />
             </TabsContent>
 
-            <TabsContent value="performance" className="space-y-4">
+            <TabsContent value="financials" className="space-y-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>Historical Performance</CardTitle>
-                  <CardDescription>Last 90 days</CardDescription>
+                  <CardTitle>Pool Financials</CardTitle>
+                  <CardDescription>Current financial snapshot</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[200px] flex items-center justify-center text-muted-foreground">
-                    📊 Performance chart would go here
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Total Value Locked</p>
+                      <p className="text-2xl font-bold">${((pool?.totalStaked || 0)).toLocaleString()} <span className="text-sm font-normal text-muted-foreground">USDC</span></p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Available Liquidity</p>
+                      <p className="text-2xl font-bold">${((pool?.availableLiquidity || 0)).toLocaleString()} <span className="text-sm font-normal text-muted-foreground">USDC</span></p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Target APY</p>
+                      <p className="text-2xl font-bold">{pool?.annualizedReturn?.toFixed(1) || 'N/A'}%</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Capital Utilization</p>
+                      <p className="text-2xl font-bold">{utilizationRate.toFixed(1)}%</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Fundraise Progress</p>
+                      <div className="space-y-2">
+                        <p className="text-2xl font-bold">{targetProgress.toFixed(0)}%</p>
+                        <div className="w-full bg-muted rounded-full h-2">
+                          <div
+                            className="bg-green-600 h-2 rounded-full transition-all"
+                            style={{ width: `${Math.min(targetProgress, 100)}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          ${((pool?.totalStaked || 0)).toLocaleString()} of ${((pool?.poolSize || 0)).toLocaleString()} target
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Total Investors</p>
+                      <p className="text-2xl font-bold">{pool?.totalInvestors || 0}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Interest Rate Structure</CardTitle>
+                  <CardDescription>Borrower rate parameters for this pool</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-6 md:grid-cols-3">
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Base Rate</p>
+                      <p className="text-2xl font-bold">{pool?.baseInterestRate?.toFixed(1) || 'N/A'}%</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Risk Premium Range</p>
+                      <p className="text-2xl font-bold">{pool?.riskPremiumMin?.toFixed(1) || '0'}% – {pool?.riskPremiumMax?.toFixed(1) || '0'}%</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Effective Rate Range</p>
+                      <p className="text-2xl font-bold">
+                        {((pool?.baseInterestRate || 0) + (pool?.riskPremiumMin || 0)).toFixed(1)}% – {((pool?.baseInterestRate || 0) + (pool?.riskPremiumMax || 0)).toFixed(1)}%
+                      </p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             </TabsContent>
 
             <TabsContent value="loans" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Active Loans</CardTitle>
-                  <CardDescription>Loan information coming soon</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p>Loan details will be displayed here once available.</p>
+              {loansLoading ? (
+                <Card>
+                  <CardContent className="py-8">
+                    <div className="flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <span className="ml-2 text-muted-foreground">Loading loan metrics...</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : loansData?.loans?.length > 0 ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold">Active Loans ({loansData.totalCount})</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Metrics sourced from {loansData.dataSource === 'cartesi' ? 'Cartesi verifiable computation' : 'database'}
+                      </p>
+                    </div>
+                    {loansData.contractExplorerUrl && (
+                      <a
+                        href={loansData.contractExplorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                      >
+                        View Contract
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="grid gap-4">
+                    {loansData.loans.map((loan: any) => (
+                      <LoanMetricsCard
+                        key={loan.id}
+                        displayLabel={loan.displayLabel}
+                        lendScore={loan.lendScore}
+                        lendScoreHealth={loan.lendScoreHealth}
+                        dscr={loan.dscr}
+                        dscrHealth={loan.dscrHealth}
+                        interestRate={loan.interestRate}
+                        interestRateFormatted={loan.interestRateFormatted}
+                        status={loan.status}
+                        industry={loan.industry}
+                        proofHash={loan.proofHash}
+                        verifiedAt={loan.verifiedAt}
+                        verifiedOnChain={loan.verifiedOnChain}
+                        proofSource={loan.proofSource}
+                        explorerUrl={loan.explorerUrl}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <NoLoansCard />
+              )}
             </TabsContent>
 
             <TabsContent value="terms" className="space-y-4">
@@ -629,8 +840,12 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                     </div>
                     <div>
                       <Label>Withdrawal Period</Label>
-                      <p className="text-2xl font-bold">7 days</p>
-                      <p className="text-xs text-muted-foreground">Unstaking cooldown period</p>
+                      <p className="text-2xl font-bold">
+                        {onChainPool?.cooldownWaived ? 'Instant' : '7 days'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {onChainPool?.cooldownWaived ? 'Cooldown currently waived' : 'Unstaking cooldown period'}
+                      </p>
                     </div>
                   </div>
                 </CardContent>
@@ -704,7 +919,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                   </p>
                 </div>
                 <a
-                  href={`https://sepolia.arbiscan.io/address/${process.env.NEXT_PUBLIC_STAKING_POOL_ADDRESS}`}
+                  href={getExplorerUrl('address', process.env.NEXT_PUBLIC_STAKING_POOL_ADDRESS!)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:text-blue-800"
@@ -788,7 +1003,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                             <div className="flex items-start gap-2">
                               <Clock className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
                               <p className="text-xs text-yellow-800">
-                                <strong>7-day cooldown in progress.</strong> You can complete your withdrawal or cancel and restake after the cooldown period ends.
+                                <strong>Cooldown in progress.</strong> You can complete your withdrawal or cancel and restake after the cooldown period ends.
                               </p>
                             </div>
                           </div>
@@ -798,7 +1013,7 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
 
                     {!userStakeData.hasPendingUnstake && (
                       <div className="flex justify-between pt-2 border-t border-green-200">
-                        <span className="text-sm text-green-700">Total Rewards</span>
+                        <span className="text-sm text-green-700">Available Interest</span>
                         <span className="font-bold text-green-600">
                           +{userStakeData.rewards.toLocaleString()} USDC
                         </span>
@@ -810,38 +1025,66 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                   {userStakeData.hasPendingUnstake ? (
                     <div className="space-y-2">
                       {userStakeData.canWithdrawNow ? (
-                        <HoldToConfirmButton
-                          onConfirm={handleCompleteUnstake}
-                          duration={2000}
+                        <Button
+                          className="w-full bg-green-600 hover:bg-green-700 text-white"
+                          onClick={() => setShowWithdrawModal(true)}
                           disabled={isCompletingUnstake}
-                          loading={isCompletingUnstake}
-                          variant="success"
-                          size="sm"
-                          className="w-full"
                         >
-                          Hold to Withdraw
-                        </HoldToConfirmButton>
+                          {isCompletingUnstake ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            'Withdraw Funds'
+                          )}
+                        </Button>
                       ) : null}
-                      <HoldToConfirmButton
-                        onConfirm={handleCancelUnstake}
-                        duration={1500}
+                      <Button
+                        variant="outline"
+                        className="w-full border-orange-600 text-orange-600 hover:bg-orange-600 hover:text-white"
+                        onClick={() => setShowCancelUnstakeModal(true)}
                         disabled={isCancellingUnstake}
-                        loading={isCancellingUnstake}
-                        variant="warning"
-                        size="sm"
-                        className="w-full"
                       >
-                        Hold to Cancel & Restake
-                      </HoldToConfirmButton>
+                        {isCancellingUnstake ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          'Cancel & Restake'
+                        )}
+                      </Button>
                     </div>
                   ) : (
-                    <Button
-                      variant="outline"
-                      className="w-full border-red-600 text-red-600 hover:bg-red-600 hover:text-white"
-                      onClick={() => setShowUnstakeModal(true)}
-                    >
-                      Unstake Funds
-                    </Button>
+                    <div className="space-y-2">
+                      {userStakeData.rewards > 0 && (
+                        <Button
+                          className="w-full bg-green-600 hover:bg-green-700 text-white"
+                          onClick={() => claimYield(pool?.slug || resolvedParams.slug)}
+                          disabled={isClaimingYield}
+                        >
+                          {isClaimingYield ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Claiming...
+                            </>
+                          ) : (
+                            <>
+                              <Banknote className="mr-2 h-4 w-4" />
+                              Claim Interest ({userStakeData.rewards.toLocaleString()} USDC)
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        className="w-full border-red-600 text-red-600 hover:bg-red-600 hover:text-white"
+                        onClick={() => setShowUnstakeModal(true)}
+                      >
+                        Unstake Funds
+                      </Button>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -945,28 +1188,36 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                     </div>
                   )}
 
-                  <HoldToConfirmButton
-                    onConfirm={handleStake}
-                    duration={1500}
+                  <Button
+                    className="w-full bg-green-600 hover:bg-green-700 text-white"
+                    size="lg"
                     disabled={
                       !stakeAmount ||
                       parseFloat(stakeAmount) < (pool.minimumStake || 100) ||
                       isStaking ||
                       !isConnected
                     }
-                    loading={isStaking}
-                    variant="success"
-                    size="lg"
-                    className="w-full"
+                    onClick={() => setShowStakeConfirmModal(true)}
                   >
-                    {isConnected ? 'Hold to Stake' : 'Connect Wallet to Stake'}
-                  </HoldToConfirmButton>
+                    {isStaking ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Staking...
+                      </>
+                    ) : isConnected ? (
+                      'Stake Funds'
+                    ) : (
+                      'Connect Wallet to Stake'
+                    )}
+                  </Button>
 
                   {/* Info Notice */}
-                  <div className="flex items-start gap-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                    <Info className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-yellow-800">
-                      Your funds will be locked in the pool. Withdrawals have a 7-day cooldown period.
+                  <div className={`flex items-start gap-2 p-3 rounded-lg border ${onChainPool?.cooldownWaived ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                    <Info className={`h-4 w-4 mt-0.5 flex-shrink-0 ${onChainPool?.cooldownWaived ? 'text-green-600' : 'text-yellow-600'}`} />
+                    <p className={`text-xs ${onChainPool?.cooldownWaived ? 'text-green-800' : 'text-yellow-800'}`}>
+                      {onChainPool?.cooldownWaived
+                        ? 'Cooldown is currently waived for this pool. You can withdraw at any time.'
+                        : 'Your funds will be locked in the pool. Withdrawals have a 7-day cooldown period.'}
                     </p>
                   </div>
                 </CardContent>
@@ -1109,11 +1360,13 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                 </Button>
               </div>
 
-              <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+              <div className={`p-3 rounded-lg border ${onChainPool?.cooldownWaived ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
                 <div className="flex items-start gap-2">
-                  <Info className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-yellow-800">
-                    <strong>7-day cooldown period:</strong> Your funds will be locked for 7 days after unstaking before you can withdraw them.
+                  <Info className={`h-4 w-4 mt-0.5 flex-shrink-0 ${onChainPool?.cooldownWaived ? 'text-green-600' : 'text-yellow-600'}`} />
+                  <p className={`text-xs ${onChainPool?.cooldownWaived ? 'text-green-800' : 'text-yellow-800'}`}>
+                    {onChainPool?.cooldownWaived
+                      ? <><strong>No cooldown:</strong> Cooldown is waived for this pool. You can withdraw immediately after unstaking.</>
+                      : <><strong>7-day cooldown period:</strong> Your funds will be locked for 7 days after unstaking before you can withdraw them.</>}
                   </p>
                 </div>
               </div>
@@ -1130,27 +1383,150 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ slug: st
                 >
                   Cancel
                 </Button>
-                <HoldToConfirmButton
-                  onConfirm={handleUnstake}
-                  duration={2000}
+                <Button
+                  variant="destructive"
+                  className="flex-1"
                   disabled={
                     isUnstaking ||
                     !unstakeAmount ||
                     parseFloat(unstakeAmount) <= 0 ||
                     parseFloat(unstakeAmount) > userStakeData.amount
                   }
-                  loading={isUnstaking}
-                  variant="destructive"
-                  size="md"
-                  className="flex-1"
+                  onClick={() => {
+                    setShowUnstakeModal(false);
+                    setShowUnstakeConfirmModal(true);
+                  }}
                 >
-                  Hold to Confirm Unstake
-                </HoldToConfirmButton>
+                  {isUnstaking ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    'Request Unstake'
+                  )}
+                </Button>
               </div>
             </CardContent>
           </Card>
         </div>
       )}
+
+      {/* Stake Confirmation Modal */}
+      <HoldConfirmModal
+        open={showStakeConfirmModal}
+        onOpenChange={setShowStakeConfirmModal}
+        onConfirm={handleStake}
+        title="Confirm Stake"
+        description="You are about to stake funds into this lending pool. Your funds will be locked and earn yield from loan interest."
+        confirmText="Hold to Stake"
+        variant="success"
+        duration={1500}
+        loading={isStaking}
+        details={
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Amount:</span>
+              <span className="font-medium">{parseFloat(stakeAmount || '0').toLocaleString()} USDC</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Pool:</span>
+              <span className="font-medium">{pool?.name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Target APY:</span>
+              <span className="font-medium text-green-600">{pool?.annualizedReturn?.toFixed(1) || '0'}%</span>
+            </div>
+            <p className="pt-2 text-xs text-muted-foreground border-t">
+              By depositing into this pool, you agree to the{' '}
+              <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline">
+                Terms and Conditions
+              </a>{' '}
+              and acknowledge the risks disclosed in the{' '}
+              <a href={`/explore/pools/${resolvedParams.slug}/documents`} target="_blank" rel="noopener noreferrer" className="underline">
+                pool documents
+              </a>.
+            </p>
+          </div>
+        }
+      />
+
+      {/* Unstake Confirmation Modal */}
+      <HoldConfirmModal
+        open={showUnstakeConfirmModal}
+        onOpenChange={setShowUnstakeConfirmModal}
+        onConfirm={handleUnstake}
+        title="Confirm Unstake Request"
+        description={onChainPool?.cooldownWaived
+          ? "Cooldown is waived. You can withdraw your funds immediately after this request."
+          : "Your unstake request will begin a 7-day cooldown period. After the cooldown, you can withdraw your funds."}
+        confirmText="Hold to Unstake"
+        variant="destructive"
+        duration={2000}
+        loading={isUnstaking}
+        details={
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Amount:</span>
+              <span className="font-medium">{parseFloat(unstakeAmount || '0').toLocaleString()} USDC</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Cooldown Period:</span>
+              <span className="font-medium">{onChainPool?.cooldownWaived ? 'Waived' : '7 days'}</span>
+            </div>
+          </div>
+        }
+      />
+
+      {/* Withdraw Confirmation Modal */}
+      <HoldConfirmModal
+        open={showWithdrawModal}
+        onOpenChange={setShowWithdrawModal}
+        onConfirm={handleCompleteUnstake}
+        title="Withdraw Funds"
+        description="Your cooldown period is complete. Confirm to withdraw your funds to your wallet."
+        confirmText="Hold to Withdraw"
+        variant="success"
+        duration={2000}
+        loading={isCompletingUnstake}
+        details={
+          userStakeData ? (
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Amount:</span>
+                <span className="font-medium">{userStakeData.pendingUnstake?.toLocaleString() || 0} USDC</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Rewards:</span>
+                <span className="font-medium text-green-600">+{userStakeData.rewards?.toLocaleString() || 0} USDC</span>
+              </div>
+            </div>
+          ) : null
+        }
+      />
+
+      {/* Cancel Unstake Confirmation Modal */}
+      <HoldConfirmModal
+        open={showCancelUnstakeModal}
+        onOpenChange={setShowCancelUnstakeModal}
+        onConfirm={handleCancelUnstake}
+        title="Cancel Unstake Request"
+        description="This will cancel your pending unstake request and restake your funds back into the pool."
+        confirmText="Hold to Cancel"
+        variant="warning"
+        duration={1500}
+        loading={isCancellingUnstake}
+        details={
+          userStakeData ? (
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Amount to Restake:</span>
+                <span className="font-medium">{userStakeData.pendingUnstake?.toLocaleString() || 0} USDC</span>
+              </div>
+            </div>
+          ) : null
+        }
+      />
     </div>
   );
 }
@@ -1173,6 +1549,10 @@ function PoolActivity({ poolSlug }: { poolSlug: string }) {
         return <ArrowDownLeft className="h-4 w-4 text-orange-600" />;
       case 'unstake_request':
         return <Clock className="h-4 w-4 text-yellow-600" />;
+      case 'disbursement':
+        return <Banknote className="h-4 w-4 text-blue-600" />;
+      case 'repayment':
+        return <ArrowUpRight className="h-4 w-4 text-emerald-600" />;
       default:
         return <DollarSign className="h-4 w-4 text-gray-600" />;
     }
@@ -1183,6 +1563,8 @@ function PoolActivity({ poolSlug }: { poolSlug: string }) {
       stake: 'Staked',
       unstake: 'Unstaked',
       unstake_request: 'Unstake Requested',
+      disbursement: 'Loan Disbursed',
+      repayment: 'Loan Repayment',
     };
     return labels[type] || type;
   };
@@ -1198,7 +1580,7 @@ function PoolActivity({ poolSlug }: { poolSlug: string }) {
           <Activity className="h-5 w-5" />
           Pool Activity
         </CardTitle>
-        <CardDescription>Recent staking transactions in this pool</CardDescription>
+        <CardDescription>Recent transactions in this pool</CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -1233,7 +1615,7 @@ function PoolActivity({ poolSlug }: { poolSlug: string }) {
                       <span className="font-medium text-sm">{getTypeLabel(tx.type)}</span>
                       {tx.transaction_hash && (
                         <a
-                          href={`https://sepolia.arbiscan.io/tx/${tx.transaction_hash}`}
+                          href={getExplorerUrl('tx', tx.transaction_hash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:text-blue-800"
@@ -1249,8 +1631,8 @@ function PoolActivity({ poolSlug }: { poolSlug: string }) {
                     </div>
                   </div>
                 </div>
-                <span className={`font-semibold text-sm ${tx.type === 'stake' ? 'text-green-600' : 'text-orange-600'}`}>
-                  {tx.type === 'stake' ? '+' : '-'}{tx.amount.toLocaleString()} USDC
+                <span className={`font-semibold text-sm ${(tx.type === 'stake' || tx.type === 'repayment') ? 'text-green-600' : 'text-orange-600'}`}>
+                  {(tx.type === 'stake' || tx.type === 'repayment') ? '+' : '-'}{tx.amount.toLocaleString()} USDC
                 </span>
               </div>
             ))}

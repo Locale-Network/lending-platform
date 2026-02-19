@@ -7,6 +7,7 @@ import {
   setLastYieldDistributionBlock,
   getCurrentBlockNumber,
 } from '@/services/contracts/poolBridge';
+import { hashLoanId } from '@/lib/contracts/loanPool';
 import {
   checkRateLimit,
   getClientIp,
@@ -41,10 +42,14 @@ const log = cronLogger.child({ job: 'distribute-yield' });
  */
 
 // Configuration
-const getConfig = () => ({
-  enabled: process.env.YIELD_DISTRIBUTION_ENABLED !== 'false',
-  chunkSize: parseInt(process.env.YIELD_DISTRIBUTION_CHUNK_SIZE || '1000', 10),
-});
+const getConfig = () => {
+  const chunkSize = parseInt(process.env.YIELD_DISTRIBUTION_CHUNK_SIZE || '1000', 10);
+  return {
+    enabled: process.env.YIELD_DISTRIBUTION_ENABLED !== 'false',
+    // SECURITY: Guard against NaN from malformed env var
+    chunkSize: isNaN(chunkSize) ? 1000 : Math.max(1, chunkSize),
+  };
+};
 
 // Lock TTL: 5 minutes (longer than max cron execution time)
 const LOCK_TTL_MS = 5 * 60 * 1000;
@@ -175,11 +180,9 @@ async function processYieldDistribution(
     results.processed++;
 
     try {
-      // Find the loan application by hashed loan ID
-      const loanApplication = await prisma.loanApplication.findFirst({
+      // Find the loan application by matching hashed loan ID from the event
+      const activeLoanApplications = await prisma.loanApplication.findMany({
         where: {
-          // The loanId in the event is a bytes32 hash of the loan application ID
-          // We need to find loans that have been disbursed
           status: { in: ['ACTIVE', 'DISBURSED'] },
         },
         include: {
@@ -190,6 +193,11 @@ async function processYieldDistribution(
           },
         },
       });
+
+      // On-chain loanId is keccak256(applicationId) — match against event
+      const loanApplication = activeLoanApplications.find(
+        app => hashLoanId(app.id).toLowerCase() === event.loanId.toLowerCase()
+      );
 
       if (!loanApplication || loanApplication.poolLoans.length === 0) {
         log.warn({ loanId: event.loanId.slice(0, 10) }, 'No pool found for loan');

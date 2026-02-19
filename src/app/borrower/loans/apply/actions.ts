@@ -10,6 +10,7 @@ import {
   initialiseLoanApplication as dbInitialiseLoanApplication,
   submitLoanApplication as dbSubmitLoanApplication,
   getLoanApplication,
+  saveDraftProgress as dbSaveDraftProgress,
 } from '@/services/db/loan-applications/borrower';
 import { validateRequest as validateBorrowerRequest } from '@/app/borrower/actions';
 import { getLoanAmount } from '@/services/contracts/creditTreasuryPool';
@@ -109,8 +110,9 @@ export async function getExistingLoanApplication(args: {
       };
     }
 
-    // Get pool ID from poolLoans if exists
-    const poolId = loanApplication.poolLoans.length > 0 ? loanApplication.poolLoans[0].poolId : '';
+    // Get pool ID: prefer targetPoolId (saved from form), fallback to poolLoans
+    const poolId = loanApplication.targetPoolId
+      || (loanApplication.poolLoans.length > 0 ? loanApplication.poolLoans[0].poolId : '');
 
     // Check if debt service proof exists
     const hasDebtServiceProof = loanApplication.debtService.length > 0;
@@ -228,6 +230,7 @@ export async function submitLoanApplication(args: {
       requestedAmount: BigInt(formData.requestedLoanAmount),
       fundingUrgency: formData.fundingUrgency,
       loanPurpose: formData.loanPurpose,
+      poolId: formData.poolId,
     },
     // NEW: Credit score from Step 3
     estimatedCreditScore: formData.estimatedCreditScore,
@@ -235,6 +238,108 @@ export async function submitLoanApplication(args: {
     agreedToTerms: formData.agreedToTerms,
     outstandingLoans: formData.outstandingLoans,
   });
+}
+
+/**
+ * Save draft progress at each step (for "Save and Continue" functionality)
+ * This persists form data to the database without final submission
+ */
+export interface SaveDraftProgressParams {
+  loanApplicationId: string;
+  accountAddress: string;
+  step: number;
+  // Step 1 fields
+  businessLegalName?: string;
+  businessAddress?: string;
+  businessState?: string;
+  businessCity?: string;
+  businessZipCode?: string;
+  ein?: string;
+  businessFoundedYear?: number;
+  businessLegalStructure?: string;
+  businessWebsite?: string;
+  businessPrimaryIndustry?: string;
+  businessDescription?: string;
+  // Step 2 fields
+  poolId?: string;
+  requestedLoanAmount?: number;
+  fundingUrgency?: string;
+  loanPurpose?: string;
+  // Step 3 fields
+  estimatedCreditScore?: string;
+  // Step 5 fields
+  hasOutstandingLoans?: boolean;
+  outstandingLoans?: Array<{
+    lenderName: string;
+    loanType: string;
+    outstandingBalance: number;
+    monthlyPayment: number;
+    remainingMonths: number;
+    annualInterestRate: number;
+  }>;
+}
+
+export async function saveDraftProgress(
+  params: SaveDraftProgressParams
+): Promise<{ success: boolean; error?: string }> {
+  const { loanApplicationId, accountAddress, step, ...formFields } = params;
+
+  try {
+    await validateBorrowerRequest(accountAddress);
+
+    // Build the save data based on the current step
+    const saveData: Parameters<typeof dbSaveDraftProgress>[0] = {
+      id: loanApplicationId,
+      accountAddress,
+    };
+
+    // Step 1: Business Information
+    if (step === 1) {
+      saveData.businessInfo = {
+        businessLegalName: formFields.businessLegalName,
+        businessAddress: formFields.businessAddress,
+        businessState: formFields.businessState,
+        businessCity: formFields.businessCity,
+        businessZipCode: formFields.businessZipCode,
+        ein: formFields.ein,
+        businessFoundedYear: formFields.businessFoundedYear,
+        businessLegalStructure: formFields.businessLegalStructure,
+        businessWebsite: formFields.businessWebsite || null,
+        businessPrimaryIndustry: formFields.businessPrimaryIndustry,
+        businessDescription: formFields.businessDescription,
+      };
+    }
+
+    // Step 2: Loan Details
+    if (step === 2) {
+      saveData.loanDetails = {
+        poolId: formFields.poolId,
+        requestedAmount: formFields.requestedLoanAmount,
+        fundingUrgency: formFields.fundingUrgency,
+        loanPurpose: formFields.loanPurpose,
+      };
+    }
+
+    // Step 3: Credit Score
+    if (step === 3) {
+      saveData.estimatedCreditScore = formFields.estimatedCreditScore;
+    }
+
+    // Step 5: Outstanding Loans
+    if (step === 5) {
+      saveData.hasOutstandingLoans = formFields.hasOutstandingLoans;
+      saveData.outstandingLoans = formFields.outstandingLoans;
+    }
+
+    const result = await dbSaveDraftProgress(saveData);
+    return result;
+  } catch (error) {
+    console.error('Error saving draft progress:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to save progress',
+    };
+  }
 }
 
 interface CreateLinkTokenResponse {
@@ -344,6 +449,7 @@ export async function submitDebtServiceProof(args: {
   accessToken: string;
   loanApplicationId: string;
   requestedLoanAmount?: string; // Passed from form state when available
+  fundingUrgency?: string; // Passed from form state when available
 }) {
   const session = await getSession();
   const accountAddress = session?.address;
@@ -355,14 +461,15 @@ export async function submitDebtServiceProof(args: {
   // Normalize address to lowercase for case-insensitive matching
   const normalizedAddress = accountAddress.toLowerCase();
 
-  const { accessToken, loanApplicationId, requestedLoanAmount } = args;
+  const { accessToken, loanApplicationId, requestedLoanAmount, fundingUrgency } = args;
 
   // verify ownership of access token and loan application by auth user
+  // Note: accessToken is encrypted in DB, so we verify by loanApplicationId instead
   const [plaidTokenOwnership, loanApplicationOwnership] = await Promise.all([
-    // Verify Plaid token ownership
+    // Verify Plaid token ownership via loan application ID (tokens are encrypted in DB)
     prisma.plaidItemAccessToken.findFirst({
       where: {
-        accessToken: accessToken,
+        loanApplicationId: loanApplicationId,
         accountAddress: normalizedAddress,
       },
     }),
@@ -404,7 +511,9 @@ export async function submitDebtServiceProof(args: {
     if (requestedLoanAmount && Number(requestedLoanAmount) > 0) {
       // PRIORITY 1: Use amount passed from form state (before form submission)
       loanAmount = Number(requestedLoanAmount);
-      termMonths = 24; // default - form state fundingUrgency could be passed too
+      termMonths = fundingUrgency
+        ? FundingUrgencyToTermMonths[fundingUrgency as FundingUrgencyType] || 24
+        : 24;
       console.log(
         `[DSCR] Using passed form state: amount=$${loanAmount.toLocaleString()}, term=${termMonths} months`
       );
@@ -452,6 +561,7 @@ export async function submitDebtServiceProof(args: {
         borrowerAddress: accountAddress,
         monthlyDebtService,
         loanAmount: BigInt(loanAmount), // Pass loan amount for Cartesi loan creation
+        termMonths,
       });
 
       if (!result.success) {
@@ -540,5 +650,66 @@ export async function submitDebtServiceProof(args: {
     }
   } catch (error) {
     console.error('Error submitting debt service proof', error);
+  }
+}
+
+interface DeleteDraftResponse {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Delete a draft loan application from the application form
+ */
+export async function deleteDraftApplication(
+  loanApplicationId: string,
+  accountAddress: string
+): Promise<DeleteDraftResponse> {
+  try {
+    await validateBorrowerRequest(accountAddress);
+    const normalizedAddress = accountAddress.toLowerCase();
+
+    // Verify the loan exists, belongs to this borrower, and is in DRAFT status
+    const loanApplication = await prisma.loanApplication.findUnique({
+      where: { id: loanApplicationId },
+      select: {
+        id: true,
+        accountAddress: true,
+        status: true,
+      },
+    });
+
+    if (!loanApplication) {
+      return { success: false, error: 'Loan application not found' };
+    }
+
+    if (loanApplication.accountAddress.toLowerCase() !== normalizedAddress) {
+      return { success: false, error: 'Unauthorized' };
+    }
+
+    if (loanApplication.status !== LoanApplicationStatus.DRAFT) {
+      return { success: false, error: 'Only draft applications can be deleted' };
+    }
+
+    // Delete associated records first, then the loan application
+    await prisma.$transaction(async (tx) => {
+      await tx.outstandingLoan.deleteMany({
+        where: { loanApplicationId },
+      });
+      await tx.plaidItemAccessToken.deleteMany({
+        where: { loanApplicationId },
+      });
+      await tx.loanApplication.delete({
+        where: { id: loanApplicationId },
+      });
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting draft application:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete draft',
+    };
   }
 }

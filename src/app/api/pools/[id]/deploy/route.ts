@@ -3,7 +3,20 @@ import { getSession } from '@/lib/auth/authorization';
 import prisma from '@prisma/index';
 import { createPublicClient, createWalletClient, http, parseUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { arbitrumSepolia } from 'viem/chains';
+import { arbitrum, arbitrumSepolia } from 'viem/chains';
+import { assertGasPriceSafe } from '@/lib/contracts/gas-safety';
+import { DEFAULT_COOLDOWN_SECONDS } from '@/lib/constants/business';
+
+const CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID ? parseInt(process.env.NEXT_PUBLIC_CHAIN_ID, 10) : undefined;
+
+function getChain() {
+  if (!CHAIN_ID) throw new Error('NEXT_PUBLIC_CHAIN_ID not configured');
+  switch (CHAIN_ID) {
+    case 421614: return arbitrumSepolia;
+    case 42161: return arbitrum;
+    default: throw new Error(`Unsupported NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}`);
+  }
+}
 import { stakingPoolAbi, STAKING_POOL_ADDRESS, hashPoolId } from '@/lib/contracts/stakingPool';
 
 /**
@@ -87,9 +100,12 @@ export async function POST(
     // Compute the contract pool ID from slug
     const contractPoolId = hashPoolId(pool.slug);
 
-    // Set up viem clients for Arbitrum Sepolia
-    const chain = arbitrumSepolia;
-    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
+    // Set up viem clients for the configured chain
+    const chain = getChain();
+    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
+    if (!rpcUrl) {
+      return NextResponse.json({ error: 'RPC not configured' }, { status: 500 });
+    }
 
     const publicClient = createPublicClient({
       chain,
@@ -111,11 +127,21 @@ export async function POST(
     // e.g., 1% = 100 basis points
     const feeRateBasisPoints = BigInt(Math.round(pool.managementFeeRate * 100));
 
+    // Cooldown, maturity, and eligibility parameters
+    const cooldownPeriod = BigInt(pool.cooldownPeriodSeconds || DEFAULT_COOLDOWN_SECONDS);
+    const maturityDate = pool.maturityDate
+      ? BigInt(Math.floor(pool.maturityDate.getTime() / 1000))
+      : BigInt(0); // 0 = no maturity
+    const eligibilityRegistry = (pool.eligibilityRegistryAddress || '0x0000000000000000000000000000000000000000') as `0x${string}`;
+
     console.log('[Deploy] Creating pool on-chain:', {
       poolId: contractPoolId,
       name: pool.name,
       minimumStake: minimumStakeWei.toString(),
       feeRate: feeRateBasisPoints.toString(),
+      cooldownPeriod: cooldownPeriod.toString(),
+      maturityDate: maturityDate.toString(),
+      eligibilityRegistry,
       stakingPoolAddress: STAKING_POOL_ADDRESS,
     });
 
@@ -139,12 +165,15 @@ export async function POST(
       // Pool doesn't exist, which is what we want
     }
 
+    // Check gas price before submitting
+    await assertGasPriceSafe(() => publicClient.getGasPrice());
+
     // Deploy pool to smart contract
     const txHash = await walletClient.writeContract({
       address: STAKING_POOL_ADDRESS,
       abi: stakingPoolAbi,
       functionName: 'createPool',
-      args: [contractPoolId, pool.name, minimumStakeWei, feeRateBasisPoints],
+      args: [contractPoolId, pool.name, minimumStakeWei, feeRateBasisPoints, cooldownPeriod, maturityDate, eligibilityRegistry],
     });
 
     console.log('[Deploy] Transaction submitted:', txHash);
@@ -272,10 +301,13 @@ export async function GET(
     let onChainData = null;
     if (pool.isOnChain && pool.contractPoolId && STAKING_POOL_ADDRESS) {
       try {
-        const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
+        const readRpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
+        if (!readRpcUrl) {
+          return NextResponse.json({ error: 'RPC not configured' }, { status: 500 });
+        }
         const publicClient = createPublicClient({
-          chain: arbitrumSepolia,
-          transport: http(rpcUrl),
+          chain: getChain(),
+          transport: http(readRpcUrl),
         });
 
         const poolData = await publicClient.readContract({
@@ -291,7 +323,7 @@ export async function GET(
           totalStaked: poolData[2].toString(),
           totalShares: poolData[3].toString(),
           feeRate: poolData[4].toString(),
-          active: poolData[5],
+          active: poolData[8],
         };
       } catch (error) {
         console.error('[Deploy] Error fetching on-chain data:', error);

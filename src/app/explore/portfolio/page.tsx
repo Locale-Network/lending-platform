@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { TrendingUp, DollarSign, PieChart, Activity, Wallet, ArrowUpRight, ArrowDownLeft, Clock, ExternalLink, RefreshCw, Plus, ArrowRight, Settings, Loader2 } from 'lucide-react';
-import { HoldToConfirmButton } from '@/components/ui/hold-to-confirm-button';
+import { HoldConfirmModal } from '@/components/ui/hold-confirm-modal';
 import { StatusIndicator } from '@/components/ui/status-indicator';
 import { Progress } from '@/components/ui/progress';
 import { ApplyFundingButton } from '@/components/ui/apply-funding-button';
@@ -21,6 +21,7 @@ import { useWalletAuth } from '@/hooks/useWalletAuth';
 import { useUserStake, useCompleteUnstake } from '@/hooks/useStakingPool';
 import useSWR from 'swr';
 import Link from 'next/link';
+import { getExplorerUrl } from '@/lib/explorer';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -34,11 +35,13 @@ export default function PortfolioPage() {
   const [transactions, setTransactions] = useState<StakeTransaction[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const { toast } = useToast();
 
   // Get pending withdrawal state directly from the blockchain contract
-  // Using the real-estate-bridge pool as the primary staking pool
-  const { stake: userStakeData, refetch: refetchUserStake } = useUserStake('real-estate-bridge');
+  // Derive pool slug from portfolio data instead of hardcoding
+  const activePoolSlug = portfolioData?.stakes?.[0]?.pool?.slug as string | undefined;
+  const { stake: userStakeData, refetch: refetchUserStake } = useUserStake(activePoolSlug);
 
   // Complete unstake hook for withdrawing after cooldown
   const { completeUnstake, isPending: isCompletingUnstake, isConfirmed: unstakeConfirmed, error: unstakeError } = useCompleteUnstake();
@@ -490,17 +493,21 @@ export default function PortfolioPage() {
                 {transactionStats.pendingUnstakeAmount > 0 &&
                   transactionStats.canWithdrawAt &&
                   transactionStats.canWithdrawAt <= new Date() && (
-                    <HoldToConfirmButton
-                      onConfirm={handleCompleteUnstake}
-                      duration={2000}
-                      disabled={isCompletingUnstake}
-                      loading={isCompletingUnstake}
-                      variant="success"
+                    <Button
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
                       size="sm"
-                      className="w-full"
+                      onClick={() => setShowWithdrawModal(true)}
+                      disabled={isCompletingUnstake}
                     >
-                      Hold to Withdraw
-                    </HoldToConfirmButton>
+                      {isCompletingUnstake ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        'Withdraw Funds'
+                      )}
+                    </Button>
                   )}
               </CardContent>
             </Card>
@@ -565,6 +572,27 @@ export default function PortfolioPage() {
           <ApplyFundingButton />
         </CardContent>
       </Card>
+
+      {/* Withdraw Confirmation Modal */}
+      <HoldConfirmModal
+        open={showWithdrawModal}
+        onOpenChange={setShowWithdrawModal}
+        onConfirm={handleCompleteUnstake}
+        title="Withdraw Funds"
+        description="Your cooldown period is complete. Confirm to withdraw your funds to your wallet."
+        confirmText="Hold to Withdraw"
+        variant="success"
+        duration={2000}
+        loading={isCompletingUnstake}
+        details={
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Amount:</span>
+              <span className="font-medium">{transactionStats.pendingUnstakeAmount?.toLocaleString() || 0} USDC</span>
+            </div>
+          </div>
+        }
+      />
     </div>
   );
 }
@@ -811,7 +839,7 @@ function TransactionRow({ transaction }: { transaction: StakeTransaction }) {
               <>
                 <span>•</span>
                 <a
-                  href={`https://sepolia.arbiscan.io/tx/${transaction.transaction_hash}`}
+                  href={getExplorerUrl('tx', transaction.transaction_hash)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:underline flex items-center gap-1"

@@ -59,17 +59,16 @@ export const getKycVerification = async ({
   // Normalize address to lowercase for case-insensitive matching
   const normalizedAddress = accountAddress?.toLowerCase();
 
-  /*
-    query by accountAddress AND identityVerificationId if both are provided
-    otherwise query by either accountAddress or identityVerificationId
-  */
+  // Use AND when both fields provided, OR when only one is available
   const record = await prisma.kYCVerification.findFirst({
-    where: {
-      OR: [
-        ...(normalizedAddress ? [{ accountAddress: normalizedAddress }] : []),
-        ...(identityVerificationId ? [{ identityVerificationId }] : []),
-      ],
-    },
+    where: normalizedAddress && identityVerificationId
+      ? { accountAddress: normalizedAddress, identityVerificationId }
+      : {
+          OR: [
+            ...(normalizedAddress ? [{ accountAddress: normalizedAddress }] : []),
+            ...(identityVerificationId ? [{ identityVerificationId }] : []),
+          ],
+        },
   });
 
   return record;

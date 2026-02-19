@@ -5,6 +5,12 @@ import {
   updateLoanApplication as dbUpdateLoanApplication,
   getLoanApplication,
 } from '@/services/db/loan-applications/approver';
+import { prisma } from '@/lib/prisma';
+import {
+  calculateInterestRateFromDSCR,
+  calculateDscrRateFromTransactions,
+  DEFAULT_INTEREST_RATE_BP,
+} from '@/lib/interest-rate';
 import { formatAddress } from '@/utils/string';
 import { LoanApplicationsForTable } from './columns';
 import { getSession } from '@/lib/auth/authorization';
@@ -25,6 +31,9 @@ import {
 } from '@/services/contracts/creditTreasuryPool';
 import { getTokenDecimals, getTokenSymbol } from '@/services/contracts/token';
 import { submitInput } from '@/services/cartesi';
+import { calculateAndStorePoolRisk } from '@/services/risk';
+import { FundingUrgencyToTermMonths, type FundingUrgencyType } from '@/app/borrower/loans/apply/form-schema';
+import { subMonths } from 'date-fns';
 
 export async function validateRequest(accountAddress: string) {
   const session = await getSession();
@@ -231,8 +240,48 @@ export const disburseLoan = async (args: {
       throw new Error('Invalid borrower address');
     }
 
-    const interestRate = 1000; // 10% in basis points (1000 = 10%)
-    const termMonths = 24; // Default 24 month term
+    // Fetch the latest completed DSCR calculation to get the calculated interest rate
+    const latestDscrCalculation = await prisma.dSCRCalculationLog.findFirst({
+      where: {
+        loanApplicationId: loanApplicationId,
+        status: 'COMPLETED',
+        calculatedRate: { not: null },
+      },
+      orderBy: { completedAt: 'desc' },
+    });
+
+    // Term months from borrower's funding urgency selection
+    const termMonths = loan.fundingUrgency
+      ? FundingUrgencyToTermMonths[loan.fundingUrgency as FundingUrgencyType] || 24
+      : 24;
+
+    // Use calculated rate from Cartesi if available
+    let interestRate: number;
+    if (latestDscrCalculation?.calculatedRate) {
+      interestRate = Math.round(latestDscrCalculation.calculatedRate);
+    } else {
+      // Cartesi hasn't returned a rate yet — calculate from stored transactions
+      const DSCR_WINDOW_MONTHS = 3;
+      const windowStartDate = subMonths(new Date(), DSCR_WINDOW_MONTHS);
+      const transactions = await prisma.transaction.findMany({
+        where: {
+          loanApplicationId,
+          isDeleted: false,
+          transactionId: { not: null },
+          date: { gte: windowStartDate },
+        },
+        distinct: ['transactionId'],
+        select: { amount: true, date: true },
+      });
+
+      const { interestRate: dscrRate } = calculateDscrRateFromTransactions(
+        transactions,
+        loanAmount,
+        termMonths,
+      );
+      interestRate = dscrRate;
+      console.log(`[Approver] No calculatedRate in DB, derived ${interestRate}bp from DSCR (${transactions.length} txns)`);
+    }
 
     const tokenDecimals = await getTokenDecimals();
     const amountInTokenUnits = BigInt(loanAmount) * BigInt(10 ** tokenDecimals);
@@ -296,6 +345,64 @@ export const disburseLoan = async (args: {
       loanApplication: { status: LoanApplicationStatus.DISBURSED },
     });
 
+    // Step 5b: Find the target pool (borrower's selection) or fallback to oldest active
+    let activePool = loan.targetPoolId
+      ? await prisma.loanPool.findFirst({ where: { id: loan.targetPoolId, status: 'ACTIVE' } })
+      : null;
+
+    if (!activePool) {
+      // Fallback for legacy applications without targetPoolId
+      activePool = await prisma.loanPool.findFirst({
+        where: { status: 'ACTIVE' },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+
+    if (activePool) {
+      // Create PoolLoan record to track this loan in the pool
+      await prisma.poolLoan.upsert({
+        where: {
+          poolId_loanApplicationId: {
+            poolId: activePool.id,
+            loanApplicationId: loanApplicationId,
+          },
+        },
+        create: {
+          poolId: activePool.id,
+          loanApplicationId: loanApplicationId,
+          principal: loanAmount,
+          interestRate: interestRate / 100, // Convert basis points to percentage
+          termMonths: termMonths,
+          expectedReturn: loanAmount * (1 + (interestRate / 10000) * (termMonths / 12)),
+        },
+        update: {
+          principal: loanAmount,
+          interestRate: interestRate / 100,
+          termMonths: termMonths,
+          expectedReturn: loanAmount * (1 + (interestRate / 10000) * (termMonths / 12)),
+        },
+      });
+
+      // Update pool's available liquidity (decrease by loan amount)
+      await prisma.loanPool.update({
+        where: { id: activePool.id },
+        data: {
+          availableLiquidity: {
+            decrement: loanAmount,
+          },
+        },
+      });
+
+      console.log(`[Approver] PoolLoan record created for pool ${activePool.id}, liquidity updated`);
+
+      // Trigger composite risk recalculation for the pool (non-blocking)
+      calculateAndStorePoolRisk(activePool.id).catch((err: Error) => {
+        console.error(`[Approver] Failed to recalculate composite risk for pool ${activePool.id}:`, err);
+      });
+    } else {
+      console.warn(`[Approver] No active pool found for loan ${loanApplicationId}`);
+    }
+
     // Step 6: Update Cartesi with disbursement status
     try {
       await submitInput({
@@ -314,6 +421,7 @@ export const disburseLoan = async (args: {
     revalidatePath('/approver');
     revalidatePath(`/approver/loans/${loanApplicationId}`);
     revalidatePath('/admin');
+    revalidatePath('/explore/pools'); // Revalidate pool pages to show updated metrics
 
     return {
       isError: false,
