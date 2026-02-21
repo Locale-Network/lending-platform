@@ -295,6 +295,7 @@ export async function GET(
 
     const payments = await prisma.paymentRecord.findMany({
       where: { loanApplicationId: loanId },
+      take: 100,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,

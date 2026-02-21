@@ -27,6 +27,7 @@ export async function GET(
         poolId: pool.id,
         isPublic: true,
       },
+      take: 100,
       orderBy: [
         { displayOrder: 'asc' },
         { createdAt: 'desc' },

@@ -203,6 +203,7 @@ export async function GET(
     // Get all loans funded by this pool from PoolLoan records
     const poolLoans = await prisma.poolLoan.findMany({
       where: { poolId: pool.id },
+      take: 200,
       include: {
         loanApplication: {
           select: {
@@ -223,6 +224,7 @@ export async function GET(
           notIn: poolLoans.map(pl => pl.loanApplicationId),
         },
       },
+      take: 200,
       select: {
         id: true,
         status: true,

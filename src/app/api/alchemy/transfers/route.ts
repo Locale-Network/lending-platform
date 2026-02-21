@@ -9,7 +9,15 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const address = searchParams.get('address');
-    const category = searchParams.get('category') || 'external'; // external, internal, erc20, erc721, erc1155
+    const rawCategory = searchParams.get('category') || 'external';
+    const ALLOWED_CATEGORIES = ['external', 'internal', 'erc20', 'erc721', 'erc1155'] as const;
+    if (!ALLOWED_CATEGORIES.includes(rawCategory as typeof ALLOWED_CATEGORIES[number])) {
+      return NextResponse.json(
+        { error: 'Invalid category. Allowed: external, internal, erc20, erc721, erc1155' },
+        { status: 400 }
+      );
+    }
+    const category = rawCategory;
     const contractAddress = searchParams.get('contractAddress'); // Optional contract address filter
     const pageKey = searchParams.get('pageKey'); // For pagination
 

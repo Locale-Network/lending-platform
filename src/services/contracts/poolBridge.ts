@@ -10,6 +10,9 @@ import {
   createSharedPublicClient,
   getPoolAdminWalletAddress,
 } from '@/lib/privy/wallet-client';
+import { logger } from '@/lib/logger';
+
+const log = logger.child({ module: 'pool-bridge' });
 
 /**
  * Pool Bridge Service
@@ -107,7 +110,7 @@ export async function transferToLoanPool(
       blockNumber: Number(receipt.blockNumber),
     };
   } catch (error) {
-    console.error('transferToLoanPool failed:', error);
+    log.error({ err: error }, 'transferToLoanPool failed');
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -206,7 +209,7 @@ export async function distributeYield(
       blockNumber: Number(receipt.blockNumber),
     };
   } catch (error) {
-    console.error('distributeYield failed:', error);
+    log.error({ err: error }, 'distributeYield failed');
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -256,7 +259,7 @@ export async function setPoolCooldownWaived(
       blockNumber: Number(receipt.blockNumber),
     };
   } catch (error) {
-    console.error('setPoolCooldownWaived failed:', error);
+    log.error({ err: error }, 'setPoolCooldownWaived failed');
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

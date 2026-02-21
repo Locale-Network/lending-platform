@@ -3,6 +3,9 @@ import 'server-only';
 import { Contract, JsonRpcProvider, Log, EventLog } from 'ethers';
 import { createClient } from '@/lib/supabase/server';
 import { stakingPoolAbi } from '@/lib/contracts/stakingPool';
+import { logger } from '@/lib/logger';
+
+const log = logger.child({ module: 'staking-pool-indexer' });
 
 /**
  * StakingPool Event Indexer
@@ -198,7 +201,7 @@ export async function indexEventsInRange(
 
     return eventsProcessed;
   } catch (error) {
-    console.error('Error indexing events:', error);
+    log.error({ err: error }, 'Error indexing events');
     throw error;
   }
 }
@@ -254,7 +257,7 @@ export async function getUserStakingHistory(
   const { data, error } = await query;
 
   if (error) {
-    console.error('Error fetching staking history:', error);
+    log.error({ err: error }, 'Error fetching staking history');
     return [];
   }
 

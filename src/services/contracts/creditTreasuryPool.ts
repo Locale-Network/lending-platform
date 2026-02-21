@@ -5,7 +5,9 @@ import creditTreasuryPoolAbi from '../contracts/CreditTreasuryPool.abi.json';
 import { rawBalanceOf } from './token';
 import { assertGasPriceSafe } from '@/lib/contracts/gas-safety';
 import { createLoanOpsWalletClient, createSharedPublicClient } from '@/lib/privy/wallet-client';
+import { logger } from '@/lib/logger';
 
+const log = logger.child({ module: 'credit-treasury-pool' });
 const abi = creditTreasuryPoolAbi.abi;
 
 function getContractAddress(): `0x${string}` {
@@ -35,7 +37,7 @@ export const createLoan = async (
 
   await assertGasPriceSafe(() => publicClient.getGasPrice());
 
-  console.log('creating loan...');
+  log.info('Creating loan...');
 
   const createLoanArgs = [hashedLoanId, borrower as `0x${string}`, BigInt(amount), BigInt(interestRate), BigInt(remainingMonths)] as const;
 
@@ -56,7 +58,7 @@ export const createLoan = async (
     args: createLoanArgs,
   });
 
-  console.log('loan creation submitted');
+  log.info('Loan creation submitted');
 
   await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, pollingInterval: 2_000 });
 };
@@ -129,7 +131,7 @@ export async function updateLoanInterestRate(
 
     return { success: true, txHash: receipt.transactionHash };
   } catch (error) {
-    console.error('Error updating loan interest rate', error);
+    log.error({ err: error }, 'Error updating loan interest rate');
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -171,7 +173,7 @@ export async function transferFundsFromPool(
 
     return { success: true, txHash: receipt.transactionHash };
   } catch (error) {
-    console.error('transferFundsFromPool failed:', error);
+    log.error({ err: error }, 'transferFundsFromPool failed');
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -210,10 +212,7 @@ export async function makePartialRepayment(
 
     await assertGasPriceSafe(() => walletPublicClient.getGasPrice());
 
-    console.log('[Repayment] Making partial repayment', {
-      loanId,
-      amount: amount.toString(),
-    });
+    log.info({ loanId, amount: amount.toString() }, 'Making partial repayment');
 
     await walletPublicClient.simulateContract({
       account,
@@ -245,11 +244,7 @@ export async function makePartialRepayment(
       args: [hashedLoanId],
     });
 
-    console.log('[Repayment] Partial repayment completed', {
-      loanId,
-      txHash: receipt.transactionHash,
-      isFullyRepaid: !stillActive,
-    });
+    log.info({ loanId, txHash: receipt.transactionHash, isFullyRepaid: !stillActive }, 'Partial repayment completed');
 
     return {
       success: true,
@@ -257,7 +252,7 @@ export async function makePartialRepayment(
       isFullyRepaid: !stillActive,
     };
   } catch (error) {
-    console.error('[Repayment] Error making partial repayment:', error);
+    log.error({ err: error }, 'Error making partial repayment');
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -286,7 +281,7 @@ export async function makeFullRepayment(loanId: string): Promise<RepaymentResult
 
     await assertGasPriceSafe(() => walletPublicClient.getGasPrice());
 
-    console.log('[Repayment] Making full repayment', { loanId });
+    log.info({ loanId }, 'Making full repayment');
 
     await walletPublicClient.simulateContract({
       account,
@@ -310,10 +305,7 @@ export async function makeFullRepayment(loanId: string): Promise<RepaymentResult
       throw new Error('Transaction failed');
     }
 
-    console.log('[Repayment] Full repayment completed', {
-      loanId,
-      txHash: receipt.transactionHash,
-    });
+    log.info({ loanId, txHash: receipt.transactionHash }, 'Full repayment completed');
 
     return {
       success: true,
@@ -321,7 +313,7 @@ export async function makeFullRepayment(loanId: string): Promise<RepaymentResult
       isFullyRepaid: true,
     };
   } catch (error) {
-    console.error('[Repayment] Error making full repayment:', error);
+    log.error({ err: error }, 'Error making full repayment');
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -342,7 +334,7 @@ export async function getLoanAmount(loanId: string): Promise<bigint> {
       args: [hashedLoanId],
     }) as bigint;
   } catch (error) {
-    console.error('Error getting loan amount', error);
+    log.error({ err: error }, 'Error getting loan amount');
     return BigInt(0);
   }
 }
@@ -391,7 +383,7 @@ export async function getLoanInterestAmount(loanId: string): Promise<bigint> {
       args: [hashedLoanId],
     }) as bigint;
   } catch (error) {
-    console.error('Error getting loan interest amount', error);
+    log.error({ err: error }, 'Error getting loan interest amount');
     return BigInt(0);
   }
 }
@@ -432,7 +424,7 @@ export async function loanExistsOnChain(loanId: string): Promise<boolean> {
     }) as `0x${string}`;
     return borrower !== '0x0000000000000000000000000000000000000000';
   } catch (error) {
-    console.error('Error checking if loan exists:', error);
+    log.error({ err: error }, 'Error checking if loan exists');
     return false;
   }
 }
@@ -459,7 +451,7 @@ export async function getLoanRemainingBalance(loanId: string): Promise<bigint> {
 
     return originalAmount - repaidAmount;
   } catch (error) {
-    console.error('[Repayment] Error getting remaining balance:', error);
+    log.error({ err: error }, 'Error getting remaining balance');
     return BigInt(0);
   }
 }

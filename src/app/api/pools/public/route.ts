@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
 
     const pools = await prisma.loanPool.findMany({
       where,
+      take: 50,
       select: {
         id: true,
         name: true,
@@ -104,6 +105,7 @@ export async function GET(request: NextRequest) {
       // Interest rates per pool (for weighted average borrower rate)
       prisma.poolLoan.findMany({
         where: { poolId: { in: poolIds } },
+        take: 500,
         select: { poolId: true, principal: true, interestRate: true },
       }),
     ]);
