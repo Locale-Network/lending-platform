@@ -45,8 +45,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Build Alchemy API URL - Using Arbitrum Sepolia testnet
-    const baseUrl = `https://arb-sepolia.g.alchemy.com/v2/${apiKey}`;
+    // Build Alchemy API URL - environment-driven chain selection
+    const chainId = process.env.NEXT_PUBLIC_CHAIN_ID ? parseInt(process.env.NEXT_PUBLIC_CHAIN_ID, 10) : undefined;
+    let alchemyNetwork: string;
+    switch (chainId) {
+      case 42161: alchemyNetwork = 'arb-mainnet'; break;
+      case 421614: alchemyNetwork = 'arb-sepolia'; break;
+      default:
+        console.error(`Unsupported chain ID for Alchemy: ${chainId}`);
+        return NextResponse.json({ error: 'Unsupported network' }, { status: 500 });
+    }
+    const baseUrl = `https://${alchemyNetwork}.g.alchemy.com/v2/${apiKey}`;
 
     // Build request body for asset transfers
     // We need to query both sent (fromAddress) and received (toAddress) transfers
@@ -95,7 +104,7 @@ export async function GET(request: NextRequest) {
     if (data.error) {
       console.error('Alchemy API error:', data.error);
       return NextResponse.json(
-        { error: data.error.message || 'Failed to fetch transfers' },
+        { error: 'Failed to fetch transfers' },
         { status: 500 }
       );
     }
@@ -123,10 +132,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Alchemy transfers API error:', error);
     return NextResponse.json(
-      {
-        error: 'Failed to fetch blockchain transfers',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Failed to fetch blockchain transfers' },
       { status: 500 }
     );
   }

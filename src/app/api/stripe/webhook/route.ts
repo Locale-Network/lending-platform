@@ -4,7 +4,6 @@ import prisma from '@prisma/index';
 import {
   verifyAndConstructWebhookEvent,
   centsToDollars,
-  mapStripeStatusToPaymentStatus,
 } from '@/services/stripe/achPayments';
 import { makePartialRepayment } from '@/services/contracts/creditTreasuryPool';
 import { parseUnits } from 'ethers';

@@ -18,6 +18,19 @@ import { ROLE_REDIRECTS } from '@/app/api/auth/auth-pages';
 import { LoanApplicationStatus, Role } from '@prisma/client';
 import { redirect } from 'next/navigation';
 import { Address, isAddress } from 'viem';
+
+// Valid loan status transitions (current -> allowed next states)
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ['SUBMITTED'],
+  SUBMITTED: ['PENDING', 'APPROVED', 'REJECTED'],
+  PENDING: ['APPROVED', 'REJECTED'],
+  APPROVED: ['DISBURSED', 'REJECTED'],
+  DISBURSED: ['ACTIVE'],
+  ACTIVE: ['REPAID', 'DEFAULTED'],
+  REPAID: [],
+  DEFAULTED: [],
+  REJECTED: [],
+};
 import { revalidatePath } from 'next/cache';
 import {
   activateLoan,
@@ -111,6 +124,24 @@ export const updateLoanApplicationStatus = async (args: {
     // For APPROVED status, use approveLoan() instead
     if (status === LoanApplicationStatus.APPROVED) {
       return approveLoan({ loanApplicationId });
+    }
+
+    // Validate status transition
+    const loan = await prisma.loanApplication.findUnique({
+      where: { id: loanApplicationId },
+      select: { status: true },
+    });
+
+    if (!loan) {
+      return { isError: true, errorMessage: 'Loan application not found' };
+    }
+
+    const allowedTransitions = VALID_TRANSITIONS[loan.status] || [];
+    if (!allowedTransitions.includes(status)) {
+      return {
+        isError: true,
+        errorMessage: `Cannot transition from ${loan.status} to ${status}`,
+      };
     }
 
     await dbUpdateLoanApplication({ loanApplicationId, loanApplication: { status } });

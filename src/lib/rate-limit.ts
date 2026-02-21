@@ -10,6 +10,7 @@
  */
 
 import { headers } from 'next/headers';
+import { timingSafeEqual } from 'crypto';
 
 // In-memory fallback for development (not for production!)
 const inMemoryStore = new Map<string, { count: number; resetTime: number }>();
@@ -267,6 +268,12 @@ export function rateLimitHeaders(result: RateLimitResult): HeadersInit {
  *
  * In production, at least one method must succeed.
  */
+/** Timing-safe string comparison to prevent timing attacks on secrets */
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
 export function validateCronSecret(request: Request): boolean {
   const cronSecret = process.env.CRON_SECRET;
 
@@ -276,9 +283,11 @@ export function validateCronSecret(request: Request): boolean {
     return false;
   }
 
-  // Check Bearer token (use lowercase for case-insensitive header matching)
+  const expectedToken = `Bearer ${cronSecret}`;
+
+  // Check Bearer token
   const authHeader = request.headers.get('authorization');
-  if (authHeader === `Bearer ${cronSecret}`) {
+  if (authHeader && safeCompare(authHeader, expectedToken)) {
     return true;
   }
 
@@ -292,7 +301,7 @@ export function validateCronSecret(request: Request): boolean {
       console.warn('[Cron] Vercel cron header present but no auth header - rejecting');
       return false;
     }
-    if (authHeader === `Bearer ${cronSecret}`) {
+    if (safeCompare(authHeader, expectedToken)) {
       return true;
     }
   }

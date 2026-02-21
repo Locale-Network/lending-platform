@@ -52,10 +52,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Image upload error:', error);
-    const message = error instanceof Error ? error.message : 'Upload failed';
-    const isAuthError = message.includes('Unauthorized') || message.includes('Authentication');
+    const internalMsg = error instanceof Error ? error.message : '';
+    const isAuthError = internalMsg.includes('Unauthorized') || internalMsg.includes('Authentication');
     return NextResponse.json(
-      { error: message },
+      { error: isAuthError ? 'Authentication required' : 'Upload failed' },
       { status: isAuthError ? 401 : 500 }
     );
   }
