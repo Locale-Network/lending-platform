@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
+    const apiKey = process.env.ALCHEMY_API_KEY;
     if (!apiKey) {
       console.error('Alchemy API key not configured');
       return NextResponse.json(

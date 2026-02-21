@@ -9,7 +9,7 @@ import {
 import { makePartialRepayment } from '@/services/contracts/creditTreasuryPool';
 import { parseUnits } from 'ethers';
 import { paymentLogger } from '@/lib/logger';
-import { checkAndMarkWebhook } from '@/lib/webhook-dedup';
+import { checkAndMarkWebhook, clearWebhookProcessed } from '@/lib/webhook-dedup';
 
 const log = paymentLogger.child({ webhook: 'stripe' });
 
@@ -79,9 +79,18 @@ export async function POST(request: NextRequest) {
         await handlePaymentProcessing(event.data.object as Stripe.PaymentIntent);
         break;
 
-      case 'payment_intent.succeeded':
-        await handlePaymentSucceeded(event.data.object as Stripe.PaymentIntent);
+      case 'payment_intent.succeeded': {
+        const onChainOk = await handlePaymentSucceeded(event.data.object as Stripe.PaymentIntent);
+        if (!onChainOk) {
+          // On-chain recording failed — clear dedup so Stripe can retry
+          await clearWebhookProcessed(webhookId, 'stripe');
+          return NextResponse.json(
+            { error: 'On-chain recording failed, will retry' },
+            { status: 500 }
+          );
+        }
         break;
+      }
 
       case 'payment_intent.payment_failed':
         await handlePaymentFailed(event.data.object as Stripe.PaymentIntent);
@@ -146,13 +155,13 @@ async function handlePaymentProcessing(paymentIntent: Stripe.PaymentIntent) {
  * Payment has been successfully received.
  * This is when we record the repayment on-chain.
  */
-async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
+async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent): Promise<boolean> {
   const { id: paymentIntentId, metadata, amount, amount_received, currency } = paymentIntent;
   const loanId = metadata?.loanId;
 
   if (!loanId) {
     log.warn({ paymentIntentId }, 'No loanId in payment metadata');
-    return;
+    return true; // Not retryable — no loanId means nothing to record
   }
 
   const amountInDollars = centsToDollars(amount_received || amount);
@@ -221,12 +230,12 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
 
       log.info({ loanId }, 'Loan fully repaid');
     }
+
+    return true;
   } else {
-    // Log the error but don't fail the webhook
-    // The payment is still recorded in the database for manual reconciliation
     log.error(
       { paymentIntentId, loanId, error: onChainResult.error },
-      'Failed to record repayment on-chain'
+      'Failed to record repayment on-chain — will retry via Stripe'
     );
 
     // Mark the payment record for retry
@@ -237,6 +246,8 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
         failureReason: `On-chain recording failed: ${onChainResult.error}`,
       },
     });
+
+    return false; // Signal caller to clear dedup and return 500 for Stripe retry
   }
 }
 

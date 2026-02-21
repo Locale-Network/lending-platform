@@ -180,6 +180,34 @@ function checkAndMarkInMemory(key: string, timestamp: number): { isNew: boolean 
   return { isNew: true };
 }
 
+/**
+ * Clear a previously marked webhook so it can be reprocessed.
+ * Use when webhook processing fails after the atomic mark (e.g., on-chain tx fails)
+ * to allow the payment provider to retry.
+ */
+export async function clearWebhookProcessed(
+  webhookId: string,
+  provider: string
+): Promise<void> {
+  const key = `webhook:${provider}:${webhookId}`;
+
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (url && token) {
+    try {
+      await fetch(`${url}/DEL/${encodeURIComponent(key)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (error) {
+      log.error({ err: error }, 'Redis DEL failed in clearWebhookProcessed');
+    }
+  }
+
+  processedWebhooks.delete(key);
+}
+
 // In-memory helpers
 function checkInMemory(key: string): boolean {
   cleanupInMemory();

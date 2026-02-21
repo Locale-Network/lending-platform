@@ -115,15 +115,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // Normalize address to lowercase for case-insensitive matching
     const normalizedAddress = accountAddress.toLowerCase();
 
-    // Check if approver/admin access is requested
-    const isApproverRequest = request.nextUrl.searchParams.get('approver') === 'true';
+    // Check if user has elevated role (ADMIN or APPROVER can view any loan)
+    const userRole = session.user?.role;
+    const isPrivileged = userRole === 'ADMIN' || userRole === 'APPROVER';
 
-    // Check if user is an admin (admins can view any loan)
-    const isAdmin = session.user?.role === 'ADMIN';
-
-    // Build query based on access type
-    // Approvers and Admins can view any loan, borrowers only their own
-    const whereClause = (isApproverRequest || isAdmin)
+    // Build query based on role
+    // Privileged users can view any loan, borrowers only their own
+    const whereClause = isPrivileged
       ? { id: loanApplicationId }
       : { id: loanApplicationId, accountAddress: normalizedAddress };
 

@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { keccak256, toHex } from 'viem';
+import { keccak256, toBytes } from 'viem';
 import creditTreasuryPoolAbi from '../contracts/CreditTreasuryPool.abi.json';
 import { rawBalanceOf } from './token';
 import { assertGasPriceSafe } from '@/lib/contracts/gas-safety';
@@ -17,7 +17,7 @@ function getContractAddress(): `0x${string}` {
 }
 
 function hashLoanId(loanId: string): `0x${string}` {
-  return keccak256(toHex(loanId));
+  return keccak256(toBytes(loanId));
 }
 
 // --- Write functions (use Privy server wallet) ---

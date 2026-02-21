@@ -9,6 +9,7 @@ import plaidClient from '@/utils/plaid';
 import { checkRateLimit, getClientIp, rateLimits, rateLimitHeaders } from '@/lib/rate-limit';
 import { mintBorrowerCredential, mintInvestorCredential, AccreditationLevel } from '@/services/nft/mintCredential';
 import prisma from '@prisma/index';
+import { verifyPlaidWebhook } from '@/lib/plaid-webhook-verify';
 
 interface WebhookData {
   environment: string;
@@ -126,10 +127,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Read raw body for signature verification
+    const rawBody = await req.text();
+    const verificationHeader = req.headers.get('plaid-verification');
+
+    // SECURITY: Verify Plaid webhook JWT signature
+    const isValid = await verifyPlaidWebhook(rawBody, verificationHeader);
+    if (!isValid) {
+      console.error('[KYC Webhook] Invalid webhook signature');
+      return NextResponse.json(
+        { message: 'Invalid webhook signature' },
+        { status: 401 }
+      );
+    }
+
     // SECURITY: Parse JSON with explicit error handling
     let webhookData: WebhookData;
     try {
-      webhookData = await req.json();
+      webhookData = JSON.parse(rawBody);
     } catch (parseError) {
       console.error('[KYC Webhook] Invalid JSON body:', parseError);
       return NextResponse.json(

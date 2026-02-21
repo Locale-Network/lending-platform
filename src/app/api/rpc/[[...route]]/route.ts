@@ -32,7 +32,7 @@ export async function POST(
     );
   }
 
-  const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
+  const apiKey = process.env.ALCHEMY_API_KEY;
 
   if (!apiKey) {
     return NextResponse.json(
@@ -120,7 +120,7 @@ export async function GET(
     );
   }
 
-  const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
+  const apiKey = process.env.ALCHEMY_API_KEY;
 
   if (!apiKey) {
     return NextResponse.json(

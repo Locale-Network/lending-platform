@@ -87,7 +87,7 @@ cp .example.env .env
 - `NEXT_PUBLIC_REOWN_CLOUD_PROJECT_ID` - Your Reown (WalletConnect) project ID
 - `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` - WalletConnect project ID for Alchemy
 - `CARTESI_PRIVATE_KEY` - Private key from the loan-pool repo (starts with 0x)
-- `NEXT_PUBLIC_ALCHEMY_API_KEY` - Alchemy API key for Account Kit
+- `ALCHEMY_API_KEY` - Alchemy API key (server-side only)
 - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
 - `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key
