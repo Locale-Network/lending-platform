@@ -1,10 +1,15 @@
 import 'server-only';
 
-import { Contract, JsonRpcProvider, Wallet, EventLog } from 'ethers';
+import { parseAbiItem } from 'viem';
 import { stakingPoolAbi, erc20Abi } from '@/lib/contracts/stakingPool';
 import prisma from '@prisma/index';
-import { getEthersGasOverrides } from '@/lib/contracts/gas-safety';
+import { assertGasPriceSafe } from '@/lib/contracts/gas-safety';
 import { USDC_UNIT } from '@/lib/constants/business';
+import {
+  createPoolAdminWalletClient,
+  createSharedPublicClient,
+  getPoolAdminWalletAddress,
+} from '@/lib/privy/wallet-client';
 
 /**
  * Pool Bridge Service
@@ -18,58 +23,26 @@ import { USDC_UNIT } from '@/lib/constants/business';
  * 3. queryRepaymentEvents() - Index LoanRepaymentMade events
  */
 
-// Lazy initialization
-let _provider: JsonRpcProvider | null = null;
-let _signer: Wallet | null = null;
-let _stakingPool: Contract | null = null;
-let _token: Contract | null = null;
-
-function getProvider(): JsonRpcProvider {
-  if (!_provider) {
-    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
-    if (!rpcUrl) {
-      throw new Error('NEXT_PUBLIC_RPC_URL not configured');
-    }
-    _provider = new JsonRpcProvider(rpcUrl);
-  }
-  return _provider;
+function getStakingPoolAddress(): `0x${string}` {
+  const addr = process.env.NEXT_PUBLIC_STAKING_POOL_ADDRESS;
+  if (!addr) throw new Error('NEXT_PUBLIC_STAKING_POOL_ADDRESS not configured');
+  return addr as `0x${string}`;
 }
 
-function getSigner(): Wallet {
-  if (!_signer) {
-    const privateKey = process.env.POOL_ADMIN_PRIVATE_KEY;
-    if (!privateKey) {
-      throw new Error('POOL_ADMIN_PRIVATE_KEY not configured');
-    }
-    _signer = new Wallet(privateKey, getProvider());
-  }
-  return _signer;
+function getTokenAddress(): `0x${string}` {
+  const addr = process.env.NEXT_PUBLIC_TOKEN_ADDRESS;
+  if (!addr) throw new Error('NEXT_PUBLIC_TOKEN_ADDRESS not configured');
+  return addr as `0x${string}`;
 }
 
-function getStakingPool(): Contract {
-  if (!_stakingPool) {
-    const address = process.env.NEXT_PUBLIC_STAKING_POOL_ADDRESS;
-    if (!address) {
-      throw new Error('NEXT_PUBLIC_STAKING_POOL_ADDRESS not configured');
-    }
-    _stakingPool = new Contract(address, stakingPoolAbi, getSigner());
-  }
-  return _stakingPool;
-}
-
-function getToken(): Contract {
-  if (!_token) {
-    const address = process.env.NEXT_PUBLIC_TOKEN_ADDRESS;
-    if (!address) {
-      throw new Error('NEXT_PUBLIC_TOKEN_ADDRESS not configured');
-    }
-    _token = new Contract(address, erc20Abi, getSigner());
-  }
-  return _token;
+function getSimpleLoanPoolAddress(): `0x${string}` {
+  const addr = process.env.SIMPLE_LOAN_POOL_ADDRESS;
+  if (!addr) throw new Error('SIMPLE_LOAN_POOL_ADDRESS not configured');
+  return addr as `0x${string}`;
 }
 
 export function getPoolAdminAddress(): string {
-  return getSigner().address;
+  return getPoolAdminWalletAddress();
 }
 
 export interface TransferResult {
@@ -87,21 +60,23 @@ export async function transferToLoanPool(
   initiatedBy: string
 ): Promise<TransferResult> {
   try {
-    const stakingPool = getStakingPool();
-    const simpleLoanPoolAddress = process.env.SIMPLE_LOAN_POOL_ADDRESS;
+    const stakingPoolAddress = getStakingPoolAddress();
+    const simpleLoanPoolAddress = getSimpleLoanPoolAddress();
+    const { walletClient, publicClient, account, chain } = createPoolAdminWalletClient();
 
-    if (!simpleLoanPoolAddress) {
-      throw new Error('SIMPLE_LOAN_POOL_ADDRESS not configured');
-    }
+    await assertGasPriceSafe(() => publicClient.getGasPrice());
 
-    // Check gas price before submitting
-    const gasOverrides = await getEthersGasOverrides(getProvider());
+    const txHash = await walletClient.writeContract({
+      account,
+      chain,
+      address: stakingPoolAddress,
+      abi: stakingPoolAbi,
+      functionName: 'transferToLoanPool',
+      args: [amount, simpleLoanPoolAddress],
+    });
 
-    // Execute transfer
-    const tx = await stakingPool.transferToLoanPool(amount, simpleLoanPoolAddress, gasOverrides);
-    const receipt = await tx.wait();
-
-    if (receipt.status === 0) {
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
       throw new Error('Transaction failed on-chain');
     }
 
@@ -111,8 +86,8 @@ export async function transferToLoanPool(
         fromPool: 'staking',
         toPool: 'loan',
         amount,
-        transactionHash: receipt.hash,
-        blockNumber: receipt.blockNumber,
+        transactionHash: receipt.transactionHash,
+        blockNumber: Number(receipt.blockNumber),
         initiatedBy,
         status: 'COMPLETED',
       },
@@ -120,8 +95,8 @@ export async function transferToLoanPool(
 
     return {
       success: true,
-      txHash: receipt.hash,
-      blockNumber: receipt.blockNumber,
+      txHash: receipt.transactionHash,
+      blockNumber: Number(receipt.blockNumber),
     };
   } catch (error) {
     console.error('transferToLoanPool failed:', error);
@@ -152,26 +127,44 @@ export async function distributeYield(
   sourceBlockNumber: number = 0
 ): Promise<DistributeYieldResult> {
   try {
-    const stakingPool = getStakingPool();
-    const token = getToken();
-    const signer = getSigner();
-    const stakingPoolAddress = await stakingPool.getAddress();
+    const stakingPoolAddress = getStakingPoolAddress();
+    const tokenAddress = getTokenAddress();
+    const { walletClient, publicClient, account, chain } = createPoolAdminWalletClient();
 
-    // Check gas price before submitting
-    const gasOverrides = await getEthersGasOverrides(getProvider());
+    await assertGasPriceSafe(() => publicClient.getGasPrice());
 
-    // Approve StakingPool to spend tokens for yield distribution
-    const allowance = await token.allowance(signer.address, stakingPoolAddress);
+    // Check allowance and approve if needed
+    const allowance = await publicClient.readContract({
+      address: tokenAddress,
+      abi: erc20Abi,
+      functionName: 'allowance',
+      args: [account.address, stakingPoolAddress],
+    }) as bigint;
+
     if (allowance < amount) {
-      const approveTx = await token.approve(stakingPoolAddress, amount, gasOverrides);
-      await approveTx.wait();
+      const approveTxHash = await walletClient.writeContract({
+        account,
+        chain,
+        address: tokenAddress,
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [stakingPoolAddress, amount],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
     }
 
     // Distribute yield
-    const tx = await stakingPool.distributeYield(contractPoolId, amount, gasOverrides);
-    const receipt = await tx.wait();
+    const txHash = await walletClient.writeContract({
+      account,
+      chain,
+      address: stakingPoolAddress,
+      abi: stakingPoolAbi,
+      functionName: 'distributeYield',
+      args: [contractPoolId as `0x${string}`, amount],
+    });
 
-    if (receipt.status === 0) {
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
       throw new Error('Transaction failed on-chain');
     }
 
@@ -185,7 +178,7 @@ export async function distributeYield(
         interestAmount: amount,
         totalAmount: amount + principalAmount,
         sourceBlockNumber,
-        distributionTxHash: receipt.hash,
+        distributionTxHash: receipt.transactionHash,
         status: 'COMPLETED',
         completedAt: new Date(),
       },
@@ -193,8 +186,8 @@ export async function distributeYield(
 
     return {
       success: true,
-      txHash: receipt.hash,
-      blockNumber: receipt.blockNumber,
+      txHash: receipt.transactionHash,
+      blockNumber: Number(receipt.blockNumber),
     };
   } catch (error) {
     console.error('distributeYield failed:', error);
@@ -214,20 +207,29 @@ export async function setPoolCooldownWaived(
   waived: boolean
 ): Promise<TransferResult> {
   try {
-    const stakingPool = getStakingPool();
-    const gasOverrides = await getEthersGasOverrides(getProvider());
+    const stakingPoolAddress = getStakingPoolAddress();
+    const { walletClient, publicClient, account, chain } = createPoolAdminWalletClient();
 
-    const tx = await stakingPool.setPoolCooldownWaived(contractPoolId, waived, gasOverrides);
-    const receipt = await tx.wait();
+    await assertGasPriceSafe(() => publicClient.getGasPrice());
 
-    if (receipt.status === 0) {
+    const txHash = await walletClient.writeContract({
+      account,
+      chain,
+      address: stakingPoolAddress,
+      abi: stakingPoolAbi,
+      functionName: 'setPoolCooldownWaived',
+      args: [contractPoolId as `0x${string}`, waived],
+    });
+
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
       throw new Error('Transaction failed on-chain');
     }
 
     return {
       success: true,
-      txHash: receipt.hash,
-      blockNumber: receipt.blockNumber,
+      txHash: receipt.transactionHash,
+      blockNumber: Number(receipt.blockNumber),
     };
   } catch (error) {
     console.error('setPoolCooldownWaived failed:', error);
@@ -238,36 +240,44 @@ export async function setPoolCooldownWaived(
   }
 }
 
+// --- Read-only functions ---
+
 /**
  * Get balance of StakingPool
  */
 export async function getStakingPoolBalance(): Promise<bigint> {
-  const token = getToken();
-  const stakingPoolAddress = process.env.NEXT_PUBLIC_STAKING_POOL_ADDRESS;
-  if (!stakingPoolAddress) {
-    throw new Error('NEXT_PUBLIC_STAKING_POOL_ADDRESS not configured');
-  }
-  return token.balanceOf(stakingPoolAddress);
+  const publicClient = createSharedPublicClient();
+  return await publicClient.readContract({
+    address: getTokenAddress(),
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [getStakingPoolAddress()],
+  }) as bigint;
 }
 
 /**
  * Get balance of SimpleLoanPool
  */
 export async function getSimpleLoanPoolBalance(): Promise<bigint> {
-  const token = getToken();
-  const simpleLoanPoolAddress = process.env.SIMPLE_LOAN_POOL_ADDRESS;
-  if (!simpleLoanPoolAddress) {
-    throw new Error('SIMPLE_LOAN_POOL_ADDRESS not configured');
-  }
-  return token.balanceOf(simpleLoanPoolAddress);
+  const publicClient = createSharedPublicClient();
+  return await publicClient.readContract({
+    address: getTokenAddress(),
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [getSimpleLoanPoolAddress()],
+  }) as bigint;
 }
 
 /**
  * Get total transferred to loan pool from StakingPool contract
  */
 export async function getTotalTransferredToLoanPool(): Promise<bigint> {
-  const stakingPool = getStakingPool();
-  return stakingPool.totalTransferredToLoanPool();
+  const publicClient = createSharedPublicClient();
+  return await publicClient.readContract({
+    address: getStakingPoolAddress(),
+    abi: stakingPoolAbi,
+    functionName: 'totalTransferredToLoanPool',
+  }) as bigint;
 }
 
 /**
@@ -291,6 +301,10 @@ export async function getPoolBalancesSummary(): Promise<{
   };
 }
 
+const loanRepaymentEvent = parseAbiItem(
+  'event LoanRepaymentMade(bytes32 loanId, address borrower, uint256 repaymentAmount, uint256 interestAmount)'
+);
+
 /**
  * Query LoanRepaymentMade events from SimpleLoanPool
  * Used by yield distribution cron to find new repayments
@@ -308,46 +322,24 @@ export async function queryLoanRepaymentEvents(
     transactionHash: string;
   }>
 > {
-  const provider = getProvider();
-  const simpleLoanPoolAddress = process.env.SIMPLE_LOAN_POOL_ADDRESS;
+  const publicClient = createSharedPublicClient();
+  const simpleLoanPoolAddress = getSimpleLoanPoolAddress();
 
-  if (!simpleLoanPoolAddress) {
-    throw new Error('SIMPLE_LOAN_POOL_ADDRESS not configured');
-  }
+  const logs = await publicClient.getLogs({
+    address: simpleLoanPoolAddress,
+    event: loanRepaymentEvent,
+    fromBlock: BigInt(fromBlock),
+    toBlock: toBlock === 'latest' ? undefined : BigInt(toBlock),
+  });
 
-  // LoanRepaymentMade event ABI
-  const loanRepaymentAbi = [
-    {
-      type: 'event',
-      name: 'LoanRepaymentMade',
-      inputs: [
-        { name: 'loanId', type: 'bytes32', indexed: false },
-        { name: 'borrower', type: 'address', indexed: false },
-        { name: 'repaymentAmount', type: 'uint256', indexed: false },
-        { name: 'interestAmount', type: 'uint256', indexed: false },
-      ],
-    },
-  ];
-
-  const simpleLoanPool = new Contract(
-    simpleLoanPoolAddress,
-    loanRepaymentAbi,
-    provider
-  );
-
-  const filter = simpleLoanPool.filters.LoanRepaymentMade();
-  const events = await simpleLoanPool.queryFilter(filter, fromBlock, toBlock);
-
-  return events
-    .filter((e): e is EventLog => 'args' in e)
-    .map((event) => ({
-      loanId: event.args[0],
-      borrower: event.args[1],
-      repaymentAmount: event.args[2],
-      interestAmount: event.args[3],
-      blockNumber: event.blockNumber,
-      transactionHash: event.transactionHash,
-    }));
+  return logs.map((log) => ({
+    loanId: log.args.loanId!,
+    borrower: log.args.borrower!,
+    repaymentAmount: log.args.repaymentAmount!,
+    interestAmount: log.args.interestAmount!,
+    blockNumber: Number(log.blockNumber),
+    transactionHash: log.transactionHash,
+  }));
 }
 
 /**
@@ -359,7 +351,6 @@ export async function getLastYieldDistributionBlock(): Promise<number> {
   });
 
   if (!state) {
-    // Default to deployment block or a reasonable starting point
     const deployedAtBlock = parseInt(
       process.env.SIMPLE_LOAN_POOL_DEPLOYED_BLOCK || '0'
     );
@@ -389,6 +380,6 @@ export async function setLastYieldDistributionBlock(
  * Get current block number from provider
  */
 export async function getCurrentBlockNumber(): Promise<number> {
-  const provider = getProvider();
-  return provider.getBlockNumber();
+  const publicClient = createSharedPublicClient();
+  return Number(await publicClient.getBlockNumber());
 }

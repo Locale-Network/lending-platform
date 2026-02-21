@@ -1,10 +1,30 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useRouter } from 'next/navigation';
 import { Role } from '@prisma/client';
 import LoadingDots from '@/components/ui/loading-dots';
+
+/**
+ * Get the preferred wallet address from Privy user's linked accounts.
+ * Prefers embedded wallets (Privy-managed) over external wallets.
+ * Matches the logic in useWalletAuth.ts and privy-wallet-button.tsx.
+ */
+function getLinkedWalletAddress(user: ReturnType<typeof usePrivy>['user']): string | undefined {
+  if (!user?.linkedAccounts) return undefined;
+
+  const linkedWallets = user.linkedAccounts
+    .filter(account => account.type === 'wallet' && 'address' in account)
+    .map(account => account as { type: 'wallet'; address: string; walletClient?: string });
+
+  if (linkedWallets.length === 0) return undefined;
+
+  const embeddedWallet = linkedWallets.find(w => w.walletClient === 'privy');
+  if (embeddedWallet) return embeddedWallet.address;
+
+  return linkedWallets[0]?.address;
+}
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -48,7 +68,13 @@ export default function AuthGuard({
   const [walletWaitCount, setWalletWaitCount] = useState(0);
   const [hasSyncedThisSession, setHasSyncedThisSession] = useState(false);
 
-  const address = wallets[0]?.address;
+  // Use linked wallet address (same resolution as useWalletAuth/privy-wallet-button)
+  // to avoid using the wrong embedded wallet address from wallets[0]
+  const linkedAddress = getLinkedWalletAddress(user);
+  const address = useMemo(() => {
+    if (linkedAddress) return linkedAddress;
+    return wallets[0]?.address;
+  }, [linkedAddress, wallets]);
   const isConnected = authenticated && !!address;
 
   // Sync Privy auth with Supabase Account table

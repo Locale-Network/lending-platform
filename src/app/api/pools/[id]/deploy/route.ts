@@ -1,22 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/authorization';
 import prisma from '@prisma/index';
-import { createPublicClient, createWalletClient, http, parseUnits } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
-import { arbitrum, arbitrumSepolia } from 'viem/chains';
+import { parseUnits } from 'viem';
 import { assertGasPriceSafe } from '@/lib/contracts/gas-safety';
 import { DEFAULT_COOLDOWN_SECONDS } from '@/lib/constants/business';
-
-const CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID ? parseInt(process.env.NEXT_PUBLIC_CHAIN_ID, 10) : undefined;
-
-function getChain() {
-  if (!CHAIN_ID) throw new Error('NEXT_PUBLIC_CHAIN_ID not configured');
-  switch (CHAIN_ID) {
-    case 421614: return arbitrumSepolia;
-    case 42161: return arbitrum;
-    default: throw new Error(`Unsupported NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}`);
-  }
-}
+import { createPoolAdminWalletClient, createSharedPublicClient } from '@/lib/privy/wallet-client';
 import { stakingPoolAbi, STAKING_POOL_ADDRESS, hashPoolId } from '@/lib/contracts/stakingPool';
 
 /**
@@ -56,15 +44,6 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
-    // Check environment configuration
-    const adminPrivateKey = process.env.POOL_ADMIN_PRIVATE_KEY;
-    if (!adminPrivateKey) {
-      return NextResponse.json(
-        { error: 'Server configuration error: POOL_ADMIN_PRIVATE_KEY not set' },
-        { status: 500 }
-      );
-    }
-
     if (!STAKING_POOL_ADDRESS) {
       return NextResponse.json(
         { error: 'Server configuration error: NEXT_PUBLIC_STAKING_POOL_ADDRESS not set' },
@@ -100,24 +79,8 @@ export async function POST(
     // Compute the contract pool ID from slug
     const contractPoolId = hashPoolId(pool.slug);
 
-    // Set up viem clients for the configured chain
-    const chain = getChain();
-    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
-    if (!rpcUrl) {
-      return NextResponse.json({ error: 'RPC not configured' }, { status: 500 });
-    }
-
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(rpcUrl),
-    });
-
-    const account = privateKeyToAccount(adminPrivateKey as `0x${string}`);
-    const walletClient = createWalletClient({
-      account,
-      chain,
-      transport: http(rpcUrl),
-    });
+    // Set up Privy server wallet client
+    const { walletClient, publicClient, account, chain } = createPoolAdminWalletClient();
 
     // Prepare pool parameters for contract
     // minimumStake is in USD, convert to token units (6 decimals for USDC/lUSD)
@@ -170,6 +133,8 @@ export async function POST(
 
     // Deploy pool to smart contract
     const txHash = await walletClient.writeContract({
+      account,
+      chain,
       address: STAKING_POOL_ADDRESS,
       abi: stakingPoolAbi,
       functionName: 'createPool',
@@ -301,14 +266,7 @@ export async function GET(
     let onChainData = null;
     if (pool.isOnChain && pool.contractPoolId && STAKING_POOL_ADDRESS) {
       try {
-        const readRpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
-        if (!readRpcUrl) {
-          return NextResponse.json({ error: 'RPC not configured' }, { status: 500 });
-        }
-        const publicClient = createPublicClient({
-          chain: getChain(),
-          transport: http(readRpcUrl),
-        });
+        const publicClient = createSharedPublicClient();
 
         const poolData = await publicClient.readContract({
           address: STAKING_POOL_ADDRESS,

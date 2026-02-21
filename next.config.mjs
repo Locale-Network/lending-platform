@@ -64,32 +64,24 @@ const nextConfig = {
           {
             key: 'Content-Security-Policy',
             value: [
-              // Default restrictive policy
               "default-src 'self'",
-              // Scripts: unsafe-eval needed for Next.js dev, unsafe-inline for inline event handlers
-              // TODO: Consider using nonces for stricter CSP in production
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.plaid.com https://*.privy.io",
-              "script-src-elem 'self' 'unsafe-inline' https://cdn.plaid.com https://*.privy.io",
+              // Scripts: unsafe-inline needed for Next.js inline scripts (use nonces to remove)
+              "script-src 'self' 'unsafe-inline' https://cdn.plaid.com",
               // Styles: unsafe-inline needed for styled-components/emotion/tailwind
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              // Images: restrict to known sources (removed https: wildcard)
               "img-src 'self' data: blob: https://*.supabase.co https://images.squarespace-cdn.com",
-              // Fonts
               "font-src 'self' data: https://fonts.gstatic.com",
-              // API connections - explicit allowlist
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.alchemy.com wss://*.alchemy.com https://*.walletconnect.com wss://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.org https://pulse.walletconnect.org https://api.web3modal.org https://arb1.arbitrum.io https://*.arbitrum.io https://*.privy.io wss://*.privy.io https://*.privy.systems https://*.plaid.com https://api.circle.com",
-              // Iframes - restrict to auth/wallet providers
-              "frame-src 'self' https://*.walletconnect.com https://*.walletconnect.org https://verify.walletconnect.com https://verify.walletconnect.org https://auth.turnkey.com https://*.privy.io https://cdn.plaid.com https://*.plaid.com",
-              // Prevent embedding this site in iframes (clickjacking protection)
+              // Connections: Privy (auth + RPC), WalletConnect, Plaid, app services
+              "connect-src 'self' https://auth.privy.io https://*.rpc.privy.systems wss://relay.walletconnect.com wss://relay.walletconnect.org wss://www.walletlink.org https://explorer-api.walletconnect.com https://*.supabase.co wss://*.supabase.co https://*.alchemy.com wss://*.alchemy.com https://*.arbitrum.io https://*.plaid.com https://api.circle.com",
+              // Iframes: Privy auth, WalletConnect verify, Plaid Link
+              "child-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org",
+              "frame-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://cdn.plaid.com https://*.plaid.com",
               "frame-ancestors 'none'",
-              // Block plugins (Flash, Java, etc.)
               "object-src 'none'",
-              // Restrict base URI to prevent base tag injection
               "base-uri 'self'",
-              // Restrict form submissions to same origin
               "form-action 'self'",
-              // Upgrade insecure requests in production
+              "worker-src 'self'",
+              "manifest-src 'self'",
               "upgrade-insecure-requests",
             ].join('; '),
           },

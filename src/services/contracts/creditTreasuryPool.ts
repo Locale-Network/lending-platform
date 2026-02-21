@@ -1,53 +1,26 @@
 import 'server-only';
 
+import { keccak256, toHex } from 'viem';
 import creditTreasuryPoolAbi from '../contracts/CreditTreasuryPool.abi.json';
-
-import { Contract, JsonRpcProvider, keccak256, toUtf8Bytes, Wallet } from 'ethers';
 import { rawBalanceOf } from './token';
-import { getEthersGasOverrides } from '@/lib/contracts/gas-safety';
+import { assertGasPriceSafe } from '@/lib/contracts/gas-safety';
+import { createLoanOpsWalletClient, createSharedPublicClient } from '@/lib/privy/wallet-client';
 
-// Lazy initialization to avoid errors during build time when env vars may not be set
-let provider: JsonRpcProvider | null = null;
-let signer: Wallet | null = null;
-let creditTreasuryPoolContract: Contract | null = null;
+const abi = creditTreasuryPoolAbi.abi;
 
-function getProvider(): JsonRpcProvider {
-  if (!provider) {
-    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
-    if (!rpcUrl) {
-      throw new Error('NEXT_PUBLIC_RPC_URL environment variable is not set');
-    }
-    provider = new JsonRpcProvider(rpcUrl);
+function getContractAddress(): `0x${string}` {
+  const addr = process.env.CREDIT_TREASURY_POOL_ADDRESS || process.env.SIMPLE_LOAN_POOL_ADDRESS;
+  if (!addr) {
+    throw new Error('CREDIT_TREASURY_POOL_ADDRESS environment variable is not set');
   }
-  return provider;
+  return addr as `0x${string}`;
 }
 
-function getSigner(): Wallet {
-  if (!signer) {
-    const privateKey = process.env.CARTESI_PRIVATE_KEY;
-    if (!privateKey) {
-      throw new Error('CARTESI_PRIVATE_KEY environment variable is not set');
-    }
-    signer = new Wallet(privateKey, getProvider());
-  }
-  return signer;
+function hashLoanId(loanId: string): `0x${string}` {
+  return keccak256(toHex(loanId));
 }
 
-function getCreditTreasuryPool(): Contract {
-  if (!creditTreasuryPoolContract) {
-    // Support both old and new env var names for backwards compatibility
-    const contractAddress = process.env.CREDIT_TREASURY_POOL_ADDRESS || process.env.SIMPLE_LOAN_POOL_ADDRESS;
-    if (!contractAddress) {
-      throw new Error('CREDIT_TREASURY_POOL_ADDRESS environment variable is not set');
-    }
-    creditTreasuryPoolContract = new Contract(
-      contractAddress,
-      creditTreasuryPoolAbi.abi,
-      getSigner()
-    );
-  }
-  return creditTreasuryPoolContract;
-}
+// --- Write functions (use Privy server wallet) ---
 
 export const createLoan = async (
   loanId: string,
@@ -56,38 +29,47 @@ export const createLoan = async (
   interestRate: number,
   remainingMonths: number
 ): Promise<void> => {
-  const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-  const contract = getCreditTreasuryPool();
-  const gasOverrides = await getEthersGasOverrides(getProvider());
+  const hashedLoanId = hashLoanId(loanId);
+  const address = getContractAddress();
+  const { walletClient, publicClient, account, chain } = createLoanOpsWalletClient();
+
+  await assertGasPriceSafe(() => publicClient.getGasPrice());
 
   console.log('creating loan...');
 
-  const tx = await contract.createLoan(
-    hashedLoanId,
-    borrower,
-    amount,
-    interestRate,
-    remainingMonths,
-    gasOverrides
-  );
+  const txHash = await walletClient.writeContract({
+    account,
+    chain,
+    address,
+    abi,
+    functionName: 'createLoan',
+    args: [hashedLoanId, borrower as `0x${string}`, BigInt(amount), BigInt(interestRate), BigInt(remainingMonths)],
+  });
 
   console.log('loan creation submitted');
 
-  return tx.wait();
+  await publicClient.waitForTransactionReceipt({ hash: txHash });
 };
 
 export const activateLoan = async (loanId: string): Promise<void> => {
-  const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-  const contract = getCreditTreasuryPool();
-  const gasOverrides = await getEthersGasOverrides(getProvider());
-  const tx = await contract.activateLoan(hashedLoanId, gasOverrides);
+  const hashedLoanId = hashLoanId(loanId);
+  const address = getContractAddress();
+  const { walletClient, publicClient, account, chain } = createLoanOpsWalletClient();
 
-  return tx.wait();
+  await assertGasPriceSafe(() => publicClient.getGasPrice());
+
+  const txHash = await walletClient.writeContract({
+    chain,
+    address,
+    abi,
+    account,
+    functionName: 'activateLoan',
+    args: [hashedLoanId],
+  });
+
+  await publicClient.waitForTransactionReceipt({ hash: txHash });
 };
 
-/**
- * Result from updating a loan interest rate
- */
 export interface UpdateLoanRateResult {
   success: boolean;
   txHash?: string;
@@ -99,26 +81,27 @@ export async function updateLoanInterestRate(
   interestRate: bigint
 ): Promise<UpdateLoanRateResult> {
   try {
-    const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-    const contract = getCreditTreasuryPool();
+    const hashedLoanId = hashLoanId(loanId);
+    const address = getContractAddress();
+    const { walletClient, publicClient, account, chain } = createLoanOpsWalletClient();
 
-    if (!contract.updateLoanInterestRate) {
-      throw new Error('updateLoanInterestRate function not found');
-    }
+    await assertGasPriceSafe(() => publicClient.getGasPrice());
 
-    const gasOverrides = await getEthersGasOverrides(getProvider());
-    const tx = await contract.updateLoanInterestRate(hashedLoanId, interestRate, gasOverrides);
+    const txHash = await walletClient.writeContract({
+      account,
+      chain,
+      address,
+      abi,
+      functionName: 'updateLoanInterestRate',
+      args: [hashedLoanId, interestRate],
+    });
 
-    const receipt = await tx.wait();
-    // Check if the transaction was successful
-    if (receipt.status === 0) {
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
       throw new Error('Transaction failed');
     }
 
-    return {
-      success: true,
-      txHash: receipt.hash,
-    };
+    return { success: true, txHash: receipt.transactionHash };
   } catch (error) {
     console.error('Error updating loan interest rate', error);
     return {
@@ -128,65 +111,31 @@ export async function updateLoanInterestRate(
   }
 }
 
-export async function getLoanAmount(loanId: string): Promise<bigint> {
-  try {
-    const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-    const contract = getCreditTreasuryPool();
-    const loanAmount = await contract.loanIdToAmount(hashedLoanId);
-    return loanAmount;
-  } catch (error) {
-    console.error('Error getting loan amount', error);
-    return BigInt(0);
-  }
-}
-
-export async function getLoanInterestRate(loanId: string): Promise<bigint> {
-  const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-  const contract = getCreditTreasuryPool();
-  const interestRate = await contract.loanIdToInterestRate(hashedLoanId);
-  return interestRate;
-}
-
-export async function getLoanRepaymentAmount(loanId: string): Promise<bigint> {
-  const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-  const contract = getCreditTreasuryPool();
-  const repaymentAmount = await contract.loanIdToRepaymentAmount(hashedLoanId);
-  return repaymentAmount;
-}
-
-export async function getLoanActive(loanId: string): Promise<boolean> {
-  const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-  const contract = getCreditTreasuryPool();
-  const loanActive = await contract.loanIdToActive(hashedLoanId);
-  return loanActive;
-}
-
-export async function getLoanInterestAmount(loanId: string): Promise<bigint> {
-  try {
-    const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-    const contract = getCreditTreasuryPool();
-    return await contract.loanIdToInterestAmount(hashedLoanId);
-  } catch (error) {
-    console.error('Error getting loan interest amount', error);
-    return BigInt(0);
-  }
-}
-
 export async function transferFundsFromPool(
   to: string,
   amount: bigint
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
-    const contract = getCreditTreasuryPool();
-    const gasOverrides = await getEthersGasOverrides(getProvider());
-    const tx = await contract.transferFunds(to, amount, gasOverrides);
-    const receipt = await tx.wait();
+    const address = getContractAddress();
+    const { walletClient, publicClient, account, chain } = createLoanOpsWalletClient();
 
-    if (receipt.status === 0) {
+    await assertGasPriceSafe(() => publicClient.getGasPrice());
+
+    const txHash = await walletClient.writeContract({
+      account,
+      chain,
+      address,
+      abi,
+      functionName: 'transferFunds',
+      args: [to as `0x${string}`, amount],
+    });
+
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
       throw new Error('Transaction failed on-chain');
     }
 
-    return { success: true, txHash: receipt.hash };
+    return { success: true, txHash: receipt.transactionHash };
   } catch (error) {
     console.error('transferFundsFromPool failed:', error);
     return {
@@ -196,46 +145,6 @@ export async function transferFundsFromPool(
   }
 }
 
-export async function getLoanRemainingMonths(loanId: string): Promise<bigint> {
-  const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-  const contract = getCreditTreasuryPool();
-  const loanRemainingMonths = await contract.loanIdToRepaymentRemainingMonths(hashedLoanId);
-  return loanRemainingMonths;
-}
-
-export async function getLoanPoolRemaining(): Promise<bigint> {
-  const contract = getCreditTreasuryPool();
-  const loanPoolSize = await rawBalanceOf(await contract.getAddress());
-  return loanPoolSize;
-}
-
-export async function getLoanPoolTotalLentAmount(): Promise<bigint> {
-  const contract = getCreditTreasuryPool();
-  const loanPoolTotalLentAmount = await contract.totalLentAmount();
-  return loanPoolTotalLentAmount;
-}
-
-/**
- * Check if a loan exists on-chain by checking if borrower address is set
- * @param loanId The loan application ID (will be hashed)
- * @returns true if loan exists, false otherwise
- */
-export async function loanExistsOnChain(loanId: string): Promise<boolean> {
-  try {
-    const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-    const contract = getCreditTreasuryPool();
-    const borrower = await contract.loanIdToBorrower(hashedLoanId);
-    // If borrower is zero address, loan doesn't exist
-    return borrower !== '0x0000000000000000000000000000000000000000';
-  } catch (error) {
-    console.error('Error checking if loan exists:', error);
-    return false;
-  }
-}
-
-/**
- * Result from recording a loan repayment
- */
 export interface RepaymentResult {
   success: boolean;
   txHash?: string;
@@ -243,60 +152,66 @@ export interface RepaymentResult {
   isFullyRepaid?: boolean;
 }
 
-/**
- * Record a partial loan repayment on-chain
- *
- * This function is called when a borrower makes an ACH payment via Circle
- * and we need to record it on the SimpleLoanPool contract.
- *
- * @param loanId The loan application ID (will be hashed)
- * @param amount The repayment amount in token units (with decimals)
- * @returns Result with success status and transaction hash
- */
 export async function makePartialRepayment(
   loanId: string,
   amount: bigint
 ): Promise<RepaymentResult> {
   try {
-    const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-    const contract = getCreditTreasuryPool();
+    const hashedLoanId = hashLoanId(loanId);
+    const address = getContractAddress();
+    const publicClient = createSharedPublicClient();
 
     // Check if loan exists and is active
-    const isActive = await contract.loanIdToActive(hashedLoanId);
+    const isActive = await publicClient.readContract({
+      address,
+      abi,
+      functionName: 'loanIdToActive',
+      args: [hashedLoanId],
+    });
     if (!isActive) {
-      return {
-        success: false,
-        error: 'Loan is not active',
-      };
+      return { success: false, error: 'Loan is not active' };
     }
+
+    const { walletClient, publicClient: walletPublicClient, account, chain } = createLoanOpsWalletClient();
+
+    await assertGasPriceSafe(() => walletPublicClient.getGasPrice());
 
     console.log('[Repayment] Making partial repayment', {
       loanId,
       amount: amount.toString(),
     });
 
-    // Call makePartialRepayment on the contract
-    // Note: The contract expects the caller to have approved the token transfer
-    // For Circle payments, the funds are already in our treasury, so we transfer from there
-    const tx = await contract.makePartialRepayment(hashedLoanId, amount);
-    const receipt = await tx.wait();
+    const txHash = await walletClient.writeContract({
+      account,
+      chain,
+      address,
+      abi,
+      functionName: 'makePartialRepayment',
+      args: [hashedLoanId, amount],
+    });
 
-    if (receipt.status === 0) {
+    const receipt = await walletPublicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
       throw new Error('Transaction failed');
     }
 
     // Check if loan is now fully repaid
-    const stillActive = await contract.loanIdToActive(hashedLoanId);
+    const stillActive = await publicClient.readContract({
+      address,
+      abi,
+      functionName: 'loanIdToActive',
+      args: [hashedLoanId],
+    });
 
     console.log('[Repayment] Partial repayment completed', {
       loanId,
-      txHash: receipt.hash,
+      txHash: receipt.transactionHash,
       isFullyRepaid: !stillActive,
     });
 
     return {
       success: true,
-      txHash: receipt.hash,
+      txHash: receipt.transactionHash,
       isFullyRepaid: !stillActive,
     };
   } catch (error) {
@@ -308,47 +223,51 @@ export async function makePartialRepayment(
   }
 }
 
-/**
- * Record a full loan repayment on-chain
- *
- * This function is called to fully repay a loan.
- * It calculates the remaining balance and pays it all.
- *
- * @param loanId The loan application ID (will be hashed)
- * @returns Result with success status and transaction hash
- */
 export async function makeFullRepayment(loanId: string): Promise<RepaymentResult> {
   try {
-    const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-    const contract = getCreditTreasuryPool();
+    const hashedLoanId = hashLoanId(loanId);
+    const address = getContractAddress();
+    const publicClient = createSharedPublicClient();
 
     // Check if loan exists and is active
-    const isActive = await contract.loanIdToActive(hashedLoanId);
+    const isActive = await publicClient.readContract({
+      address,
+      abi,
+      functionName: 'loanIdToActive',
+      args: [hashedLoanId],
+    });
     if (!isActive) {
-      return {
-        success: false,
-        error: 'Loan is not active',
-      };
+      return { success: false, error: 'Loan is not active' };
     }
+
+    const { walletClient, publicClient: walletPublicClient, account, chain } = createLoanOpsWalletClient();
+
+    await assertGasPriceSafe(() => walletPublicClient.getGasPrice());
 
     console.log('[Repayment] Making full repayment', { loanId });
 
-    // Call makeRepayment (full repayment) on the contract
-    const tx = await contract.makeRepayment(hashedLoanId);
-    const receipt = await tx.wait();
+    const txHash = await walletClient.writeContract({
+      account,
+      chain,
+      address,
+      abi,
+      functionName: 'makeRepayment',
+      args: [hashedLoanId],
+    });
 
-    if (receipt.status === 0) {
+    const receipt = await walletPublicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
       throw new Error('Transaction failed');
     }
 
     console.log('[Repayment] Full repayment completed', {
       loanId,
-      txHash: receipt.hash,
+      txHash: receipt.transactionHash,
     });
 
     return {
       success: true,
-      txHash: receipt.hash,
+      txHash: receipt.transactionHash,
       isFullyRepaid: true,
     };
   } catch (error) {
@@ -360,23 +279,135 @@ export async function makeFullRepayment(loanId: string): Promise<RepaymentResult
   }
 }
 
-/**
- * Get remaining balance for a loan
- *
- * @param loanId The loan application ID
- * @returns Remaining balance in token units
- */
+// --- Read-only functions (use shared public client) ---
+
+export async function getLoanAmount(loanId: string): Promise<bigint> {
+  try {
+    const hashedLoanId = hashLoanId(loanId);
+    const publicClient = createSharedPublicClient();
+    return await publicClient.readContract({
+      address: getContractAddress(),
+      abi,
+      functionName: 'loanIdToAmount',
+      args: [hashedLoanId],
+    }) as bigint;
+  } catch (error) {
+    console.error('Error getting loan amount', error);
+    return BigInt(0);
+  }
+}
+
+export async function getLoanInterestRate(loanId: string): Promise<bigint> {
+  const hashedLoanId = hashLoanId(loanId);
+  const publicClient = createSharedPublicClient();
+  return await publicClient.readContract({
+    address: getContractAddress(),
+    abi,
+    functionName: 'loanIdToInterestRate',
+    args: [hashedLoanId],
+  }) as bigint;
+}
+
+export async function getLoanRepaymentAmount(loanId: string): Promise<bigint> {
+  const hashedLoanId = hashLoanId(loanId);
+  const publicClient = createSharedPublicClient();
+  return await publicClient.readContract({
+    address: getContractAddress(),
+    abi,
+    functionName: 'loanIdToRepaymentAmount',
+    args: [hashedLoanId],
+  }) as bigint;
+}
+
+export async function getLoanActive(loanId: string): Promise<boolean> {
+  const hashedLoanId = hashLoanId(loanId);
+  const publicClient = createSharedPublicClient();
+  return await publicClient.readContract({
+    address: getContractAddress(),
+    abi,
+    functionName: 'loanIdToActive',
+    args: [hashedLoanId],
+  }) as boolean;
+}
+
+export async function getLoanInterestAmount(loanId: string): Promise<bigint> {
+  try {
+    const hashedLoanId = hashLoanId(loanId);
+    const publicClient = createSharedPublicClient();
+    return await publicClient.readContract({
+      address: getContractAddress(),
+      abi,
+      functionName: 'loanIdToInterestAmount',
+      args: [hashedLoanId],
+    }) as bigint;
+  } catch (error) {
+    console.error('Error getting loan interest amount', error);
+    return BigInt(0);
+  }
+}
+
+export async function getLoanRemainingMonths(loanId: string): Promise<bigint> {
+  const hashedLoanId = hashLoanId(loanId);
+  const publicClient = createSharedPublicClient();
+  return await publicClient.readContract({
+    address: getContractAddress(),
+    abi,
+    functionName: 'loanIdToRepaymentRemainingMonths',
+    args: [hashedLoanId],
+  }) as bigint;
+}
+
+export async function getLoanPoolRemaining(): Promise<bigint> {
+  return rawBalanceOf(getContractAddress());
+}
+
+export async function getLoanPoolTotalLentAmount(): Promise<bigint> {
+  const publicClient = createSharedPublicClient();
+  return await publicClient.readContract({
+    address: getContractAddress(),
+    abi,
+    functionName: 'totalLentAmount',
+  }) as bigint;
+}
+
+export async function loanExistsOnChain(loanId: string): Promise<boolean> {
+  try {
+    const hashedLoanId = hashLoanId(loanId);
+    const publicClient = createSharedPublicClient();
+    const borrower = await publicClient.readContract({
+      address: getContractAddress(),
+      abi,
+      functionName: 'loanIdToBorrower',
+      args: [hashedLoanId],
+    }) as `0x${string}`;
+    return borrower !== '0x0000000000000000000000000000000000000000';
+  } catch (error) {
+    console.error('Error checking if loan exists:', error);
+    return false;
+  }
+}
+
 export async function getLoanRemainingBalance(loanId: string): Promise<bigint> {
   try {
-    const hashedLoanId = keccak256(toUtf8Bytes(loanId));
-    const contract = getCreditTreasuryPool();
+    const hashedLoanId = hashLoanId(loanId);
+    const publicClient = createSharedPublicClient();
+    const address = getContractAddress();
 
-    // Get the original amount and how much has been repaid
-    const originalAmount = await contract.loanIdToAmount(hashedLoanId);
-    const repaidAmount = await contract.loanIdToRepaymentAmount(hashedLoanId);
+    const originalAmount = await publicClient.readContract({
+      address,
+      abi,
+      functionName: 'loanIdToAmount',
+      args: [hashedLoanId],
+    }) as bigint;
 
-    // Calculate remaining (this is simplified - actual interest calculation may differ)
-    return BigInt(originalAmount) - BigInt(repaidAmount);
+    const repaidAmount = await publicClient.readContract({
+      address,
+      abi,
+      functionName: 'loanIdToRepaymentAmount',
+      args: [hashedLoanId],
+    }) as bigint;
+
+    return originalAmount - repaidAmount;
   } catch (error) {
     console.error('[Repayment] Error getting remaining balance:', error);
     return BigInt(0);

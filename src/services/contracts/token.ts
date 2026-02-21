@@ -2,11 +2,10 @@ import 'server-only';
 
 import tokenAbi from '../contracts/UpgradeableCommunityToken.abi.json';
 
-import { Contract, JsonRpcProvider, Wallet } from 'ethers';
+import { Contract, JsonRpcProvider } from 'ethers';
 
 // Lazy initialization to avoid errors during build time when env vars may not be set
 let provider: JsonRpcProvider | null = null;
-let signer: Wallet | null = null;
 let tokenContract: Contract | null = null;
 
 function getProvider(): JsonRpcProvider {
@@ -18,17 +17,6 @@ function getProvider(): JsonRpcProvider {
     provider = new JsonRpcProvider(rpcUrl);
   }
   return provider;
-}
-
-function getSigner(): Wallet {
-  if (!signer) {
-    const privateKey = process.env.CARTESI_PRIVATE_KEY;
-    if (!privateKey) {
-      throw new Error('CARTESI_PRIVATE_KEY environment variable is not set');
-    }
-    signer = new Wallet(privateKey, getProvider());
-  }
-  return signer;
 }
 
 function getTokenContract(): Contract {
