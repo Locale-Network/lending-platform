@@ -13,6 +13,13 @@ import { checkAndMarkWebhook, clearWebhookProcessed } from '@/lib/webhook-dedup'
 
 const log = paymentLogger.child({ webhook: 'stripe' });
 
+// Valid payment state transitions (current -> allowed next states)
+// PENDING -> CONFIRMED, PAID, FAILED
+// CONFIRMED -> PAID, FAILED
+// PAID -> (terminal - no transitions allowed)
+// FAILED -> CONFIRMED, PAID (retry scenarios)
+const TERMINAL_STATES = ['PAID'] as const;
+
 /**
  * Stripe Webhook Handler
  *
@@ -129,6 +136,17 @@ async function handlePaymentProcessing(paymentIntent: Stripe.PaymentIntent) {
     { paymentIntentId, loanId, amount: amountInDollars, currency },
     'Payment processing (ACH in transit)'
   );
+
+  // Guard: don't revert a terminal state (e.g., PAID -> CONFIRMED)
+  const existing = await prisma.paymentRecord.findUnique({
+    where: { externalPaymentId: paymentIntentId },
+    select: { status: true },
+  });
+
+  if (existing && TERMINAL_STATES.includes(existing.status as typeof TERMINAL_STATES[number])) {
+    log.warn({ paymentIntentId, currentStatus: existing.status }, 'Ignoring processing event — payment already in terminal state');
+    return;
+  }
 
   // Record payment as CONFIRMED (processing) in database
   await prisma.paymentRecord.upsert({
@@ -276,6 +294,20 @@ async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
   );
 
   if (loanId) {
+    // Guard: don't revert a terminal state (e.g., PAID -> FAILED)
+    const existing = await prisma.paymentRecord.findUnique({
+      where: { externalPaymentId: paymentIntentId },
+      select: { status: true },
+    });
+
+    if (existing && TERMINAL_STATES.includes(existing.status as typeof TERMINAL_STATES[number])) {
+      log.warn(
+        { paymentIntentId, currentStatus: existing.status },
+        'Ignoring failure event — payment already in terminal state (on-chain repayment recorded)'
+      );
+      return;
+    }
+
     const amountInDollars = centsToDollars(amount);
     const failureReason = errorMessage || errorCode || declineCode || 'Unknown error';
 

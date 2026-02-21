@@ -66,6 +66,14 @@ export async function transferToLoanPool(
 
     await assertGasPriceSafe(() => publicClient.getGasPrice());
 
+    await publicClient.simulateContract({
+      account,
+      address: stakingPoolAddress,
+      abi: stakingPoolAbi,
+      functionName: 'transferToLoanPool',
+      args: [amount, simpleLoanPoolAddress],
+    });
+
     const txHash = await walletClient.writeContract({
       account,
       chain,
@@ -75,7 +83,7 @@ export async function transferToLoanPool(
       args: [amount, simpleLoanPoolAddress],
     });
 
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, pollingInterval: 2_000 });
     if (receipt.status !== 'success') {
       throw new Error('Transaction failed on-chain');
     }
@@ -150,10 +158,18 @@ export async function distributeYield(
         functionName: 'approve',
         args: [stakingPoolAddress, amount],
       });
-      await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+      await publicClient.waitForTransactionReceipt({ hash: approveTxHash, timeout: 120_000, pollingInterval: 2_000 });
     }
 
     // Distribute yield
+    await publicClient.simulateContract({
+      account,
+      address: stakingPoolAddress,
+      abi: stakingPoolAbi,
+      functionName: 'distributeYield',
+      args: [contractPoolId as `0x${string}`, amount],
+    });
+
     const txHash = await walletClient.writeContract({
       account,
       chain,
@@ -163,7 +179,7 @@ export async function distributeYield(
       args: [contractPoolId as `0x${string}`, amount],
     });
 
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, pollingInterval: 2_000 });
     if (receipt.status !== 'success') {
       throw new Error('Transaction failed on-chain');
     }
@@ -212,6 +228,14 @@ export async function setPoolCooldownWaived(
 
     await assertGasPriceSafe(() => publicClient.getGasPrice());
 
+    await publicClient.simulateContract({
+      account,
+      address: stakingPoolAddress,
+      abi: stakingPoolAbi,
+      functionName: 'setPoolCooldownWaived',
+      args: [contractPoolId as `0x${string}`, waived],
+    });
+
     const txHash = await walletClient.writeContract({
       account,
       chain,
@@ -221,7 +245,7 @@ export async function setPoolCooldownWaived(
       args: [contractPoolId as `0x${string}`, waived],
     });
 
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, pollingInterval: 2_000 });
     if (receipt.status !== 'success') {
       throw new Error('Transaction failed on-chain');
     }

@@ -160,6 +160,11 @@ export async function checkAndMarkWebhook(
     }
   }
 
+  // SECURITY: In production, log critical warning when Redis is not configured
+  if (process.env.NODE_ENV === 'production') {
+    log.error('CRITICAL: Redis not configured in production — webhook dedup using in-memory (NOT distributed)');
+  }
+
   // Fallback to in-memory (not safe for distributed systems)
   return checkAndMarkInMemory(key, now);
 }

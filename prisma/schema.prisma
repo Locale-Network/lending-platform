@@ -746,6 +746,7 @@ model YieldDistribution {
   @@index([distributedAt])
   @@index([status])
   @@index([sourceBlockNumber]) // For deduplication in yield distribution
+  @@index([sourceBlockNumber, loanApplicationId]) // Compound index for yield dedup query
   @@map("yield_distributions")
 }
 
@@ -931,6 +932,7 @@ model PaymentRecord {
   @@index([loanApplicationId])
   @@index([status])
   @@index([createdAt])
+  @@index([loanApplicationId, status]) // Compound index for payment queries by loan + status
   @@map("payment_records")
 }
 

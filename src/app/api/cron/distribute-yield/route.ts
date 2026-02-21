@@ -167,6 +167,25 @@ async function processYieldDistribution(
     });
   }
 
+  // Pre-fetch all active loan applications ONCE (fixes N+1 query)
+  const activeLoanApplications = await prisma.loanApplication.findMany({
+    where: {
+      status: { in: ['ACTIVE', 'DISBURSED'] },
+    },
+    include: {
+      poolLoans: {
+        include: {
+          pool: true,
+        },
+      },
+    },
+  });
+
+  // Build lookup map: on-chain loanId (keccak256) -> loan application
+  const loanIdMap = new Map(
+    activeLoanApplications.map(app => [hashLoanId(app.id).toLowerCase(), app])
+  );
+
   // Process each repayment event
   const results = {
     processed: 0,
@@ -176,32 +195,20 @@ async function processYieldDistribution(
     errors: [] as string[],
   };
 
+  // Track the highest successfully processed block for safe indexer advancement
+  let lastSuccessfulBlock = lastBlock;
+
   for (const event of repaymentEvents) {
     results.processed++;
 
     try {
       // Find the loan application by matching hashed loan ID from the event
-      const activeLoanApplications = await prisma.loanApplication.findMany({
-        where: {
-          status: { in: ['ACTIVE', 'DISBURSED'] },
-        },
-        include: {
-          poolLoans: {
-            include: {
-              pool: true,
-            },
-          },
-        },
-      });
-
-      // On-chain loanId is keccak256(applicationId) — match against event
-      const loanApplication = activeLoanApplications.find(
-        app => hashLoanId(app.id).toLowerCase() === event.loanId.toLowerCase()
-      );
+      const loanApplication = loanIdMap.get(event.loanId.toLowerCase());
 
       if (!loanApplication || loanApplication.poolLoans.length === 0) {
         log.warn({ loanId: event.loanId.slice(0, 10) }, 'No pool found for loan');
         results.skipped++;
+        lastSuccessfulBlock = Math.max(lastSuccessfulBlock, event.blockNumber);
         continue;
       }
 
@@ -216,29 +223,22 @@ async function processYieldDistribution(
       if (interestAmount <= BigInt(0)) {
         log.debug({ loanId: event.loanId.slice(0, 10) }, 'No interest to distribute');
         results.skipped++;
+        lastSuccessfulBlock = Math.max(lastSuccessfulBlock, event.blockNumber);
         continue;
       }
 
-      // Idempotency check: prevent duplicate distributions
-      // Check by both block number AND transaction hash to be extra safe
+      // Idempotency check: prevent duplicate distributions using compound index
       const existingDistribution = await prisma.yieldDistribution.findFirst({
         where: {
-          OR: [
-            {
-              sourceBlockNumber: event.blockNumber,
-              loanApplicationId: loanApplication.id,
-            },
-            {
-              // Also check by transaction hash if we add that field
-              sourceBlockNumber: event.blockNumber,
-            },
-          ],
+          sourceBlockNumber: event.blockNumber,
+          loanApplicationId: loanApplication.id,
         },
       });
 
       if (existingDistribution) {
         log.debug({ blockNumber: event.blockNumber }, 'Already processed event');
         results.skipped++;
+        lastSuccessfulBlock = Math.max(lastSuccessfulBlock, event.blockNumber);
         continue;
       }
 
@@ -246,6 +246,7 @@ async function processYieldDistribution(
       if (!pool.contractPoolId) {
         log.warn({ poolId: pool.id }, 'Pool missing contractPoolId');
         results.skipped++;
+        lastSuccessfulBlock = Math.max(lastSuccessfulBlock, event.blockNumber);
         continue;
       }
 
@@ -263,11 +264,13 @@ async function processYieldDistribution(
 
       if (result.success) {
         results.distributed++;
+        lastSuccessfulBlock = Math.max(lastSuccessfulBlock, event.blockNumber);
         log.info({ txHash: result.txHash }, 'Successfully distributed yield');
       } else {
         results.failed++;
         results.errors.push(result.error || 'Unknown error');
         log.error({ error: result.error }, 'Failed to distribute yield');
+        // Don't advance lastSuccessfulBlock past a failed event
       }
     } catch (error) {
       results.failed++;
@@ -275,11 +278,15 @@ async function processYieldDistribution(
         error instanceof Error ? error.message : 'Unknown error';
       results.errors.push(errorMessage);
       log.error({ err: error }, 'Error processing event');
+      // Don't advance lastSuccessfulBlock past a failed event
     }
   }
 
-  // Update indexer state
-  await setLastYieldDistributionBlock(toBlock);
+  // Only advance indexer state to the last successfully processed block
+  // If all events succeeded, advance to toBlock; if some failed, stop before them
+  // so the next run will retry the failed events
+  const safeBlock = results.failed > 0 ? lastSuccessfulBlock : toBlock;
+  await setLastYieldDistributionBlock(safeBlock);
 
   log.info({
     ...results,

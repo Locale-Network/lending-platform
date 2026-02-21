@@ -37,18 +37,28 @@ export const createLoan = async (
 
   console.log('creating loan...');
 
+  const createLoanArgs = [hashedLoanId, borrower as `0x${string}`, BigInt(amount), BigInt(interestRate), BigInt(remainingMonths)] as const;
+
+  await publicClient.simulateContract({
+    account,
+    address,
+    abi,
+    functionName: 'createLoan',
+    args: createLoanArgs,
+  });
+
   const txHash = await walletClient.writeContract({
     account,
     chain,
     address,
     abi,
     functionName: 'createLoan',
-    args: [hashedLoanId, borrower as `0x${string}`, BigInt(amount), BigInt(interestRate), BigInt(remainingMonths)],
+    args: createLoanArgs,
   });
 
   console.log('loan creation submitted');
 
-  await publicClient.waitForTransactionReceipt({ hash: txHash });
+  await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, pollingInterval: 2_000 });
 };
 
 export const activateLoan = async (loanId: string): Promise<void> => {
@@ -57,6 +67,14 @@ export const activateLoan = async (loanId: string): Promise<void> => {
   const { walletClient, publicClient, account, chain } = createLoanOpsWalletClient();
 
   await assertGasPriceSafe(() => publicClient.getGasPrice());
+
+  await publicClient.simulateContract({
+    account,
+    address,
+    abi,
+    functionName: 'activateLoan',
+    args: [hashedLoanId],
+  });
 
   const txHash = await walletClient.writeContract({
     chain,
@@ -67,7 +85,7 @@ export const activateLoan = async (loanId: string): Promise<void> => {
     args: [hashedLoanId],
   });
 
-  await publicClient.waitForTransactionReceipt({ hash: txHash });
+  await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, pollingInterval: 2_000 });
 };
 
 export interface UpdateLoanRateResult {
@@ -87,6 +105,14 @@ export async function updateLoanInterestRate(
 
     await assertGasPriceSafe(() => publicClient.getGasPrice());
 
+    await publicClient.simulateContract({
+      account,
+      address,
+      abi,
+      functionName: 'updateLoanInterestRate',
+      args: [hashedLoanId, interestRate],
+    });
+
     const txHash = await walletClient.writeContract({
       account,
       chain,
@@ -96,7 +122,7 @@ export async function updateLoanInterestRate(
       args: [hashedLoanId, interestRate],
     });
 
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, pollingInterval: 2_000 });
     if (receipt.status !== 'success') {
       throw new Error('Transaction failed');
     }
@@ -121,6 +147,14 @@ export async function transferFundsFromPool(
 
     await assertGasPriceSafe(() => publicClient.getGasPrice());
 
+    await publicClient.simulateContract({
+      account,
+      address,
+      abi,
+      functionName: 'transferFunds',
+      args: [to as `0x${string}`, amount],
+    });
+
     const txHash = await walletClient.writeContract({
       account,
       chain,
@@ -130,7 +164,7 @@ export async function transferFundsFromPool(
       args: [to as `0x${string}`, amount],
     });
 
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, pollingInterval: 2_000 });
     if (receipt.status !== 'success') {
       throw new Error('Transaction failed on-chain');
     }
@@ -181,6 +215,14 @@ export async function makePartialRepayment(
       amount: amount.toString(),
     });
 
+    await walletPublicClient.simulateContract({
+      account,
+      address,
+      abi,
+      functionName: 'makePartialRepayment',
+      args: [hashedLoanId, amount],
+    });
+
     const txHash = await walletClient.writeContract({
       account,
       chain,
@@ -190,7 +232,7 @@ export async function makePartialRepayment(
       args: [hashedLoanId, amount],
     });
 
-    const receipt = await walletPublicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await walletPublicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, pollingInterval: 2_000 });
     if (receipt.status !== 'success') {
       throw new Error('Transaction failed');
     }
@@ -246,6 +288,14 @@ export async function makeFullRepayment(loanId: string): Promise<RepaymentResult
 
     console.log('[Repayment] Making full repayment', { loanId });
 
+    await walletPublicClient.simulateContract({
+      account,
+      address,
+      abi,
+      functionName: 'makeRepayment',
+      args: [hashedLoanId],
+    });
+
     const txHash = await walletClient.writeContract({
       account,
       chain,
@@ -255,7 +305,7 @@ export async function makeFullRepayment(loanId: string): Promise<RepaymentResult
       args: [hashedLoanId],
     });
 
-    const receipt = await walletPublicClient.waitForTransactionReceipt({ hash: txHash });
+    const receipt = await walletPublicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000, pollingInterval: 2_000 });
     if (receipt.status !== 'success') {
       throw new Error('Transaction failed');
     }

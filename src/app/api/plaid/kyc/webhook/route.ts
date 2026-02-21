@@ -10,6 +10,7 @@ import { checkRateLimit, getClientIp, rateLimits, rateLimitHeaders } from '@/lib
 import { mintBorrowerCredential, mintInvestorCredential, AccreditationLevel } from '@/services/nft/mintCredential';
 import prisma from '@prisma/index';
 import { verifyPlaidWebhook } from '@/lib/plaid-webhook-verify';
+import { checkAndMarkWebhook } from '@/lib/webhook-dedup';
 
 interface WebhookData {
   environment: string;
@@ -56,6 +57,7 @@ const handleStatusUpdatedWebhook = async (webhookData: WebhookData) => {
     });
 
     // Mint BorrowerCredential if not already present
+    // Use updateMany with WHERE condition as optimistic lock to prevent race conditions
     if (!account?.borrowerNFTTokenId) {
       try {
         const mintResult = await mintBorrowerCredential({
@@ -64,14 +66,19 @@ const handleStatusUpdatedWebhook = async (webhookData: WebhookData) => {
         });
 
         if (mintResult.success && mintResult.tokenId) {
-          await prisma.account.update({
-            where: { address: normalizedAddress },
+          // Optimistic lock: only update if borrowerNFTTokenId is still null
+          const updated = await prisma.account.updateMany({
+            where: { address: normalizedAddress, borrowerNFTTokenId: null },
             data: { borrowerNFTTokenId: mintResult.tokenId },
           });
 
-          console.log(
-            `[KYC Webhook] BorrowerCredential minted: tokenId=${mintResult.tokenId}, address=${normalizedAddress}`
-          );
+          if (updated.count > 0) {
+            console.log(
+              `[KYC Webhook] BorrowerCredential minted: tokenId=${mintResult.tokenId}, address=${normalizedAddress}`
+            );
+          } else {
+            console.log('[KYC Webhook] BorrowerCredential already set by concurrent process, skipping DB update');
+          }
         } else {
           console.error('[KYC Webhook] Failed to mint BorrowerCredential:', mintResult.error);
         }
@@ -94,14 +101,19 @@ const handleStatusUpdatedWebhook = async (webhookData: WebhookData) => {
         });
 
         if (investorMintResult.success && investorMintResult.tokenId) {
-          await prisma.account.update({
-            where: { address: normalizedAddress },
+          // Optimistic lock: only update if investorNFTTokenId is still null
+          const updated = await prisma.account.updateMany({
+            where: { address: normalizedAddress, investorNFTTokenId: null },
             data: { investorNFTTokenId: investorMintResult.tokenId },
           });
 
-          console.log(
-            `[KYC Webhook] InvestorCredential minted: tokenId=${investorMintResult.tokenId}, address=${normalizedAddress}`
-          );
+          if (updated.count > 0) {
+            console.log(
+              `[KYC Webhook] InvestorCredential minted: tokenId=${investorMintResult.tokenId}, address=${normalizedAddress}`
+            );
+          } else {
+            console.log('[KYC Webhook] InvestorCredential already set by concurrent process, skipping DB update');
+          }
         } else {
           console.error('[KYC Webhook] Failed to mint InvestorCredential:', investorMintResult.error);
         }
@@ -159,6 +171,14 @@ export async function POST(req: NextRequest) {
         { message: 'Invalid webhook payload - missing required fields' },
         { status: 400 }
       );
+    }
+
+    // Dedup: prevent duplicate processing (e.g., Plaid retries or rapid-fire webhooks)
+    const dedupId = `${webhookData.webhook_code}:${webhookData.identity_verification_id}`;
+    const { isNew } = await checkAndMarkWebhook(dedupId, 'plaid-kyc');
+    if (!isNew) {
+      console.log('[KYC Webhook] Duplicate webhook - already processed:', dedupId);
+      return NextResponse.json({ message: 'Already processed' }, { status: 200 });
     }
 
     switch (webhookData.webhook_code) {
