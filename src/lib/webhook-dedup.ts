@@ -2,15 +2,16 @@
  * Webhook Deduplication Utility
  *
  * Prevents webhook replay attacks by tracking processed webhook IDs.
- * Uses Upstash Redis for distributed deduplication across serverless instances.
+ * Uses PostgreSQL for distributed deduplication across serverless instances.
  *
  * Features:
  * - Prevents replay of old valid webhooks
- * - Distributed state via Redis
+ * - Distributed state via PostgreSQL (INSERT ... ON CONFLICT DO NOTHING)
  * - Automatic TTL cleanup
  * - Falls back to in-memory for development
  */
 
+import prisma from './prisma';
 import { logger } from './logger';
 
 const log = logger.child({ module: 'webhook-dedup' });
@@ -18,6 +19,29 @@ const log = logger.child({ module: 'webhook-dedup' });
 // In-memory fallback for development
 const processedWebhooks = new Map<string, number>();
 const DEDUP_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Probabilistic cleanup counter
+let cleanupCounter = 0;
+const CLEANUP_INTERVAL = 100; // Run cleanup every ~100 operations
+
+/**
+ * Periodically clean up expired webhook dedup entries
+ */
+async function maybeCleanupExpired(): Promise<void> {
+  cleanupCounter++;
+  if (cleanupCounter % CLEANUP_INTERVAL !== 0) return;
+
+  try {
+    const deleted = await prisma.webhookDedup.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+    if (deleted.count > 0) {
+      log.info({ count: deleted.count }, 'Cleaned up expired webhook dedup entries');
+    }
+  } catch (error) {
+    log.error({ err: error }, 'Failed to cleanup expired webhook dedup entries');
+  }
+}
 
 /**
  * Check if a webhook has already been processed (idempotency check)
@@ -32,31 +56,20 @@ export async function isWebhookProcessed(
 ): Promise<boolean> {
   const key = `webhook:${provider}:${webhookId}`;
 
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  try {
+    const entry = await prisma.webhookDedup.findUnique({
+      where: { key },
+    });
 
-  // Use Redis if available
-  if (url && token) {
-    try {
-      const response = await fetch(`${url}/get/${key}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!response.ok) {
-        log.error({ status: response.status }, 'Redis GET failed');
-        return checkInMemory(key);
-      }
-
-      const result = await response.json();
-      return result.result !== null;
-    } catch (error) {
-      log.error({ err: error }, 'Redis connection error');
-      return checkInMemory(key);
+    if (entry && entry.expiresAt > new Date()) {
+      return true;
     }
-  }
 
-  // Fallback to in-memory
-  return checkInMemory(key);
+    return false;
+  } catch (error) {
+    log.error({ err: error }, 'Database error in isWebhookProcessed');
+    return checkInMemory(key);
+  }
 }
 
 /**
@@ -74,37 +87,29 @@ export async function markWebhookProcessed(
   const key = `webhook:${provider}:${webhookId}`;
   const now = Date.now();
 
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  // Use Redis if available
-  if (url && token) {
-    try {
-      const response = await fetch(`${url}/setex/${key}/${ttlSeconds}/${now}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!response.ok) {
-        log.error({ status: response.status }, 'Redis SETEX failed');
-        markInMemory(key, now);
-      }
-    } catch (error) {
-      log.error({ err: error }, 'Redis connection error');
-      markInMemory(key, now);
-    }
-    return;
+  try {
+    await prisma.webhookDedup.upsert({
+      where: { key },
+      create: {
+        key,
+        expiresAt: new Date(now + ttlSeconds * 1000),
+      },
+      update: {
+        processedAt: new Date(),
+        expiresAt: new Date(now + ttlSeconds * 1000),
+      },
+    });
+  } catch (error) {
+    log.error({ err: error }, 'Database error in markWebhookProcessed');
+    markInMemory(key, now);
   }
-
-  // Fallback to in-memory
-  markInMemory(key, now);
 }
 
 /**
  * Check and mark in a single atomic operation
  * Returns true if this is a NEW webhook that should be processed
  *
- * SECURITY: Uses Redis SETNX (set if not exists) for atomic check-and-mark.
+ * SECURITY: Uses PostgreSQL INSERT ... ON CONFLICT DO NOTHING for atomic check-and-mark.
  * This prevents double-processing where:
  * 1. Process A checks - not processed
  * 2. Process B checks - not processed
@@ -120,58 +125,42 @@ export async function checkAndMarkWebhook(
   const key = `webhook:${provider}:${webhookId}`;
   const now = Date.now();
 
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  try {
+    const expiresAt = new Date(now + ttlSeconds * 1000);
 
-  // Use Redis if available - atomic SETNX operation
-  if (url && token) {
-    try {
-      // SECURITY FIX: Use SET NX EX for atomic check-and-set
-      // NX = only set if not exists
-      // EX = set expiration
-      // This is atomic - if the key exists, it returns null, otherwise sets and returns OK
-      const response = await fetch(
-        `${url}/SET/${encodeURIComponent(key)}/${now}/NX/EX/${ttlSeconds}`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+    // Atomic INSERT ... ON CONFLICT DO NOTHING
+    // If key doesn't exist: inserts and returns the row (isNew: true)
+    // If key already exists: does nothing and returns empty result (isNew: false)
+    const result = await prisma.$queryRaw<{ key: string }[]>`
+      INSERT INTO webhook_dedup (key, processed_at, expires_at)
+      VALUES (${key}, NOW(), ${expiresAt})
+      ON CONFLICT (key) DO NOTHING
+      RETURNING key
+    `;
 
-      if (!response.ok) {
-        log.error({ status: response.status }, 'Redis SET NX failed');
-        // Fall back to in-memory (less safe but better than failing)
-        return checkAndMarkInMemory(key, now);
-      }
+    // Trigger periodic cleanup
+    maybeCleanupExpired();
 
-      const result = await response.json();
-
-      // SET NX returns "OK" if the key was set (new webhook)
-      // Returns null if the key already existed (duplicate)
-      if (result.result === 'OK') {
-        return { isNew: true };
-      } else {
-        log.warn({ webhookId, provider }, 'Duplicate webhook detected - skipping');
-        return { isNew: false };
-      }
-    } catch (error) {
-      log.error({ err: error }, 'Redis connection error in checkAndMarkWebhook');
-      return checkAndMarkInMemory(key, now);
+    if (result.length > 0) {
+      return { isNew: true };
+    } else {
+      log.warn({ webhookId, provider }, 'Duplicate webhook detected - skipping');
+      return { isNew: false };
     }
-  }
+  } catch (error) {
+    log.error({ err: error }, 'Database error in checkAndMarkWebhook — falling back to in-memory');
 
-  // SECURITY: In production, log critical warning when Redis is not configured
-  if (process.env.NODE_ENV === 'production') {
-    log.error('CRITICAL: Redis not configured in production — webhook dedup using in-memory (NOT distributed)');
-  }
+    if (process.env.NODE_ENV === 'production') {
+      log.error('CRITICAL: Database query failed for webhook dedup in production');
+    }
 
-  // Fallback to in-memory (not safe for distributed systems)
-  return checkAndMarkInMemory(key, now);
+    return checkAndMarkInMemory(key, now);
+  }
 }
 
 /**
  * In-memory atomic check-and-mark (for development only)
- * NOTE: This is NOT safe for distributed/serverless - use Redis in production
+ * NOTE: This is NOT safe for distributed/serverless - use PostgreSQL in production
  */
 function checkAndMarkInMemory(key: string, timestamp: number): { isNew: boolean } {
   cleanupInMemory();
@@ -196,18 +185,12 @@ export async function clearWebhookProcessed(
 ): Promise<void> {
   const key = `webhook:${provider}:${webhookId}`;
 
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  if (url && token) {
-    try {
-      await fetch(`${url}/DEL/${encodeURIComponent(key)}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch (error) {
-      log.error({ err: error }, 'Redis DEL failed in clearWebhookProcessed');
-    }
+  try {
+    await prisma.webhookDedup.delete({ where: { key } }).catch(() => {
+      // Key might not exist — that's fine
+    });
+  } catch (error) {
+    log.error({ err: error }, 'Database error in clearWebhookProcessed');
   }
 
   processedWebhooks.delete(key);

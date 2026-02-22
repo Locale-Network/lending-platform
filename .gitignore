@@ -29,6 +29,9 @@ yarn-error.log*
 .env*.local
 .env
 .env.backup
+
+# sensitive credentials
+production-wallets.csv
 # Note: .env.example is NOT ignored - it should be committed as a template
 
 # vercel

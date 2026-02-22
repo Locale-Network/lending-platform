@@ -952,6 +952,31 @@ model StripeCustomer {
   @@map("stripe_customers")
 }
 
+// ============================================
+// WEBHOOK DEDUP & RATE LIMITING (replaces Redis)
+// ============================================
+
+// Atomic webhook deduplication (replaces Redis SETNX)
+model WebhookDedup {
+  key         String   @id @db.VarChar(500)
+  processedAt DateTime @default(now()) @map("processed_at")
+  expiresAt   DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("webhook_dedup")
+}
+
+// Fixed-window rate limiting (replaces Redis sorted sets)
+model RateLimitEntry {
+  key         String   @id @db.VarChar(500)
+  count       Int      @default(1)
+  windowStart DateTime @map("window_start")
+  expiresAt   DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("rate_limit_entries")
+}
+
 // Admin-configurable list of US states where the platform is available
 model AllowedState {
   id        String  @id @default(cuid())

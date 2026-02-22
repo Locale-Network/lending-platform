@@ -1,16 +1,16 @@
 /**
  * Rate Limiting Utility
  *
- * Uses Upstash Redis for serverless rate limiting.
- * Falls back to in-memory rate limiting if Redis is not configured.
- *
- * Environment Variables Required:
- * - UPSTASH_REDIS_REST_URL
- * - UPSTASH_REDIS_REST_TOKEN
+ * Uses PostgreSQL for serverless rate limiting.
+ * Falls back to in-memory rate limiting if database is not available.
  */
 
 import { headers } from 'next/headers';
 import { timingSafeEqual } from 'crypto';
+import prisma from './prisma';
+import { logger } from './logger';
+
+const log = logger.child({ module: 'rate-limit' });
 
 // In-memory fallback for development (not for production!)
 const inMemoryStore = new Map<string, { count: number; resetTime: number }>();
@@ -52,6 +52,26 @@ export const rateLimits = {
   /** CRON endpoints: 5 per minute (should only be called by Vercel) */
   cron: { limit: 5, windowSeconds: 60 },
 } as const;
+
+// Probabilistic cleanup counter
+let cleanupCounter = 0;
+const CLEANUP_INTERVAL = 50;
+
+/**
+ * Periodically clean up expired rate limit entries
+ */
+async function maybeCleanupExpired(): Promise<void> {
+  cleanupCounter++;
+  if (cleanupCounter % CLEANUP_INTERVAL !== 0) return;
+
+  try {
+    await prisma.rateLimitEntry.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+  } catch {
+    // Silently ignore cleanup errors
+  }
+}
 
 /**
  * Get client IP address from request headers
@@ -114,25 +134,26 @@ function checkInMemoryRateLimit(
 }
 
 /**
- * Check rate limit using Upstash Redis
+ * Check rate limit using PostgreSQL
+ *
+ * Uses an atomic UPSERT with window-based counter:
+ * - If no entry or window expired: resets counter to 1
+ * - If within window: increments counter
+ * - Returns current count for limit comparison
  *
  * SECURITY NOTE: Rate limiting can ONLY be disabled in development mode.
  * Production ALWAYS enforces rate limits regardless of environment variables.
  */
-async function checkUpstashRateLimit(
+async function checkPostgresRateLimit(
   identifier: string,
   config: RateLimitConfig
 ): Promise<RateLimitResult> {
   // SECURITY: Rate limiting bypass is ONLY allowed in development
-  // In production, this block is completely ignored - no bypass possible
   if (process.env.DISABLE_RATE_LIMIT === 'true') {
     if (process.env.NODE_ENV === 'production') {
-      // CRITICAL: Never bypass in production - log and continue with rate limiting
-      console.error('[Rate Limit] SECURITY: DISABLE_RATE_LIMIT attempted in production - BLOCKED');
-      // Fall through to normal rate limiting
+      log.error('SECURITY: DISABLE_RATE_LIMIT attempted in production - BLOCKED');
     } else if (process.env.NODE_ENV === 'development') {
-      // Only bypass in explicit development mode
-      console.warn('[Rate Limit] DEV ONLY: Rate limiting disabled for development');
+      log.warn('DEV ONLY: Rate limiting disabled for development');
       return {
         success: true,
         limit: config.limit,
@@ -140,73 +161,64 @@ async function checkUpstashRateLimit(
         reset: Date.now() + config.windowSeconds * 1000,
       };
     }
-    // For any other NODE_ENV (test, staging, undefined) - do NOT bypass
-  }
-
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  // SECURITY: In production, require Redis - do not fall back to in-memory
-  if (!url || !token) {
-    if (process.env.NODE_ENV === 'production') {
-      console.error('[Rate Limit] CRITICAL: Redis not configured in production - using strict in-memory limits');
-    } else {
-      console.warn('[Rate Limit] Redis not configured, using in-memory fallback');
-    }
-    return checkInMemoryRateLimit(identifier, config);
   }
 
   const key = `ratelimit:${identifier}:${config.limit}:${config.windowSeconds}`;
-  const now = Date.now();
-  const windowStart = now - config.windowSeconds * 1000;
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + config.windowSeconds * 1000);
 
   try {
-    // Use sliding window algorithm with sorted sets
-    const pipeline = [
-      // Remove old entries outside the window
-      ['ZREMRANGEBYSCORE', key, '0', windowStart.toString()],
-      // Count current entries in window
-      ['ZCARD', key],
-      // Add current request
-      ['ZADD', key, now.toString(), `${now}:${Math.random()}`],
-      // Set expiry on the key
-      ['EXPIRE', key, (config.windowSeconds + 1).toString()],
-    ];
+    // Atomic upsert: insert new entry or increment count within window
+    // If window has expired (expires_at <= now), resets to count=1 with new window
+    // If window is still active, increments count
+    const result = await prisma.$queryRaw<{ count: number; expires_at: Date }[]>`
+      INSERT INTO rate_limit_entries (key, count, window_start, expires_at)
+      VALUES (${key}, 1, ${now}, ${windowEnd})
+      ON CONFLICT (key) DO UPDATE SET
+        count = CASE
+          WHEN rate_limit_entries.expires_at <= ${now} THEN 1
+          ELSE rate_limit_entries.count + 1
+        END,
+        window_start = CASE
+          WHEN rate_limit_entries.expires_at <= ${now} THEN ${now}
+          ELSE rate_limit_entries.window_start
+        END,
+        expires_at = CASE
+          WHEN rate_limit_entries.expires_at <= ${now} THEN ${windowEnd}
+          ELSE rate_limit_entries.expires_at
+        END
+      RETURNING count, expires_at
+    `;
 
-    const response = await fetch(`${url}/pipeline`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(pipeline),
-    });
+    maybeCleanupExpired();
 
-    if (!response.ok) {
-      console.error('Upstash rate limit check failed:', await response.text());
+    if (result.length === 0) {
       return checkInMemoryRateLimit(identifier, config);
     }
 
-    const results = await response.json();
-    const currentCount = results[1].result as number;
+    const { count, expires_at } = result[0];
+    const resetTime = expires_at.getTime();
 
-    if (currentCount >= config.limit) {
+    if (count > config.limit) {
       return {
         success: false,
         limit: config.limit,
         remaining: 0,
-        reset: now + config.windowSeconds * 1000,
+        reset: resetTime,
       };
     }
 
     return {
       success: true,
       limit: config.limit,
-      remaining: config.limit - currentCount - 1,
-      reset: now + config.windowSeconds * 1000,
+      remaining: config.limit - count,
+      reset: resetTime,
     };
   } catch (error) {
-    console.error('Upstash rate limit error:', error);
+    log.error({ err: error }, 'Database rate limit error — falling back to in-memory');
+    if (process.env.NODE_ENV === 'production') {
+      log.error('CRITICAL: Database query failed for rate limiting in production');
+    }
     return checkInMemoryRateLimit(identifier, config);
   }
 }
@@ -245,7 +257,7 @@ export async function checkRateLimit(
   const config =
     typeof configKey === 'string' ? rateLimits[configKey] : configKey;
 
-  return checkUpstashRateLimit(identifier, config);
+  return checkPostgresRateLimit(identifier, config);
 }
 
 /**
@@ -279,7 +291,7 @@ export function validateCronSecret(request: Request): boolean {
 
   // CRON_SECRET is required in production
   if (!cronSecret) {
-    console.error('[Cron] CRON_SECRET not configured - rejecting request');
+    log.error('CRON_SECRET not configured - rejecting request');
     return false;
   }
 
@@ -298,7 +310,7 @@ export function validateCronSecret(request: Request): boolean {
     // Additionally verify the authorization header matches when both are present
     // This prevents someone from just setting x-vercel-cron header
     if (!authHeader) {
-      console.warn('[Cron] Vercel cron header present but no auth header - rejecting');
+      log.warn('Vercel cron header present but no auth header - rejecting');
       return false;
     }
     if (safeCompare(authHeader, expectedToken)) {
@@ -306,6 +318,6 @@ export function validateCronSecret(request: Request): boolean {
     }
   }
 
-  console.warn('[Cron] Invalid or missing authentication');
+  log.warn('Invalid or missing cron authentication');
   return false;
 }

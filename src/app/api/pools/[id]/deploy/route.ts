@@ -16,7 +16,7 @@ import { stakingPoolAbi, STAKING_POOL_ADDRESS, hashPoolId } from '@/lib/contract
  * - Pool must be in DRAFT status
  * - Pool must not already be deployed on-chain
  * - User must be ADMIN
- * - POOL_ADMIN_PRIVATE_KEY must be set in environment
+ * - Privy server wallet (POOL_ADMIN_WALLET_ID) must be configured
  *
  * Process:
  * 1. Validate pool is DRAFT and not already on-chain

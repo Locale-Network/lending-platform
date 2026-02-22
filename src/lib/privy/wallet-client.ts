@@ -39,10 +39,12 @@ function getRpcUrl(): string {
   return rpcUrl;
 }
 
-function getAuthorizationContext() {
-  const key = process.env.PRIVY_AUTH_PRIVATE_KEY;
-  if (!key) return undefined;
-  return { authorization_private_keys: [key] };
+function getAuthorizationContext(role: 'loan-ops' | 'pool-admin') {
+  const roleKey = role === 'loan-ops'
+    ? process.env.LOAN_OPS_AUTH_PRIVATE_KEY
+    : process.env.POOL_ADMIN_AUTH_PRIVATE_KEY;
+  if (!roleKey) return undefined;
+  return { authorization_private_keys: [roleKey] };
 }
 
 export interface PrivyWalletClients {
@@ -60,7 +62,7 @@ export function createLoanOpsWalletClient(): PrivyWalletClients {
   }
 
   const privy = getPrivyClient();
-  const authorizationContext = getAuthorizationContext();
+  const authorizationContext = getAuthorizationContext('loan-ops');
 
   const account = createViemAccount(privy, {
     walletId,
@@ -84,7 +86,7 @@ export function createPoolAdminWalletClient(): PrivyWalletClients {
   }
 
   const privy = getPrivyClient();
-  const authorizationContext = getAuthorizationContext();
+  const authorizationContext = getAuthorizationContext('pool-admin');
 
   const account = createViemAccount(privy, {
     walletId,

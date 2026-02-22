@@ -89,7 +89,7 @@ export default function PortfolioPage() {
   // Handle complete unstake withdrawal
   const handleCompleteUnstake = useCallback(async () => {
     try {
-      await completeUnstake('real-estate-bridge');
+      await completeUnstake(activePoolSlug || 'real-estate-bridge');
       toast({
         title: 'Withdrawal Complete',
         description: 'Your funds have been withdrawn successfully.',
