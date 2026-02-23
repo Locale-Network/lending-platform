@@ -75,7 +75,7 @@ const nextConfig = {
               "connect-src 'self' https://auth.privy.io https://*.rpc.privy.systems wss://relay.walletconnect.com wss://relay.walletconnect.org wss://www.walletlink.org https://explorer-api.walletconnect.com https://*.supabase.co wss://*.supabase.co https://*.alchemy.com wss://*.alchemy.com https://*.arbitrum.io https://*.plaid.com https://api.circle.com",
               // Iframes: Privy auth, WalletConnect verify, Plaid Link
               "child-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org",
-              "frame-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://cdn.plaid.com https://*.plaid.com",
+              "frame-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://cdn.plaid.com https://*.plaid.com https://*.mypinata.cloud https://*.supabase.co",
               "frame-ancestors 'none'",
               "object-src 'none'",
               "base-uri 'self'",
