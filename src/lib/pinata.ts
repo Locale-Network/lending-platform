@@ -24,11 +24,19 @@ export async function uploadToPinata(
   name?: string
 ): Promise<PinataUploadResult> {
   try {
-    const result = await pinata.upload.public.file(file, {
+    const upload = pinata.upload.public.file(file, {
       metadata: {
         name: name || file.name,
       },
     });
+
+    // Assign to group if configured (organizes pins per app/project)
+    const groupId = process.env.PINATA_GROUP_ID;
+    if (groupId) {
+      upload.group(groupId);
+    }
+
+    const result = await upload;
 
     const gateway = process.env.PINATA_GATEWAY || 'gateway.pinata.cloud';
 

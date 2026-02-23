@@ -602,7 +602,7 @@ function WalletSettings() {
               <div className="space-y-1 flex-1 mr-4">
                 <p className="font-mono text-sm break-all">{address}</p>
                 <p className="text-xs text-muted-foreground">
-                  Arbitrum Sepolia
+                  Arbitrum
                 </p>
               </div>
               <div className="flex gap-2">

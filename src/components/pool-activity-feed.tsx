@@ -211,7 +211,7 @@ export function PoolActivityFeed() {
 
         {data?.source === 'blockchain' && (
           <p className="text-xs text-muted-foreground text-center mt-4">
-            Data sourced directly from Arbitrum Sepolia blockchain
+            Data sourced directly from Arbitrum blockchain
           </p>
         )}
       </CardContent>

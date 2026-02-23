@@ -68,7 +68,7 @@ export function BlockchainTransfers() {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>Activity</CardTitle>
-            <CardDescription>Staking pool transactions on Arbitrum Sepolia</CardDescription>
+            <CardDescription>Staking pool transactions on Arbitrum</CardDescription>
           </div>
           <Button
             variant="outline"

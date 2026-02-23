@@ -653,14 +653,14 @@ export default function CreatePoolPage() {
                     <div className="space-y-4 p-4 border rounded-lg bg-blue-50 border-blue-200">
                       <div className="flex items-center gap-2">
                         <Rocket className="h-5 w-5 text-blue-600" />
-                        <p className="text-sm font-medium text-blue-900">Deploy to Arbitrum Sepolia</p>
+                        <p className="text-sm font-medium text-blue-900">Deploy to Arbitrum</p>
                       </div>
                       <p className="text-sm text-blue-800">
                         This will create a new pool in the StakingPool smart contract. The pool will be
                         immediately available for investors to stake in.
                       </p>
                       <div className="text-sm text-blue-700 space-y-1">
-                        <p><strong>Network:</strong> Arbitrum Sepolia (Testnet)</p>
+                        <p><strong>Network:</strong> Arbitrum</p>
                         <p><strong>Contract:</strong> StakingPool</p>
                         <p><strong>Minimum Stake:</strong> {formData.minimumStake} USDC</p>
                         <p><strong>Management Fee:</strong> {formData.managementFee}%</p>
@@ -784,7 +784,7 @@ export default function CreatePoolPage() {
                     {deploymentResult ? (
                       <div className="flex items-center gap-2">
                         <Check className="h-4 w-4 text-green-600" />
-                        <span className="font-medium text-green-700">Deployed to Arbitrum Sepolia</span>
+                        <span className="font-medium text-green-700">Deployed to Arbitrum</span>
                         <a
                           href={getExplorerUrl('tx', deploymentResult.txHash)}
                           target="_blank"
@@ -809,7 +809,7 @@ export default function CreatePoolPage() {
                   <div className="p-4 bg-green-50 rounded-lg border border-green-200">
                     <p className="text-sm font-medium text-green-900">✓ Pool Deployed Successfully</p>
                     <p className="text-sm text-green-800 mt-1">
-                      Your pool is now live on Arbitrum Sepolia. Investors can start staking immediately.
+                      Your pool is now live on Arbitrum. Investors can start staking immediately.
                       Click "View Pool" to go to the management page.
                     </p>
                   </div>
