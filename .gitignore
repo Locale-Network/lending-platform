@@ -27,7 +27,6 @@ yarn-error.log*
 
 # local env files
 .env*.local
-.env
 .env.backup
 
 # sensitive credentials
@@ -57,3 +56,4 @@ docs/
 # OS and IDE
 .locale
 .vscode/
+config.bat
