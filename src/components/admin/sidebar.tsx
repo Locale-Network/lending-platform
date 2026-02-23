@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, Waves, Plus, BarChart3, Users, UserCheck, Shield, MapPin, ArrowDownUp } from 'lucide-react';
+import { Home, Waves, Plus, BarChart3, Users, UserCheck, Shield, ShieldCheck, MapPin, ArrowDownUp } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 
@@ -50,6 +50,11 @@ const poolItems = [
     title: 'Investors',
     url: '/admin/investors',
     icon: Users,
+  },
+  {
+    title: 'Eligibility',
+    url: '/admin/investor-eligibility',
+    icon: ShieldCheck,
   },
   {
     title: 'Borrowers',
